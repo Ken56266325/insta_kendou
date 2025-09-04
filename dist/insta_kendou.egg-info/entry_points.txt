@@ -1,0 +1,2 @@
+[console_scripts]
+insta-kendou = insta_kendou.client:main
