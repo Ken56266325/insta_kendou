@@ -211,24 +211,22 @@ class InstagramAuth:
         
         return result
     
-    def load_session(self, session_file: str) -> dict:
-        """
-        Charger session depuis un fichier personnalisé
-        
-        Args:
-            session_file (str): Chemin complet vers le fichier de session
-        
-        Returns:
-            dict: Données de session ou dict vide si échec
-        """
+    def load_session(self, username: str) -> dict:
+        """Charger session depuis le disque"""
         try:
-            if os.path.exists(session_file):
-                with open(session_file, 'r', encoding='utf-8') as f:
+            complete_filename = f"sessions/{username}_ig_complete.json"
+            simple_filename = f"sessions/{username}_ig.json"
+            
+            filename = complete_filename if os.path.exists(complete_filename) else simple_filename
+            
+            if os.path.exists(filename):
+                with open(filename, 'r', encoding='utf-8') as f:
                     session_data = json.load(f)
                 
                 created_at = session_data.get("created_at") or session_data.get("last_login") or session_data.get("session_created", 0)
                 
                 if time.time() - created_at < 7 * 24 * 3600:
+                    print(f"✅ Session existante chargée pour {username}")
                     self.session_data = session_data
                     
                     cookies = session_data.get("cookies", {})
@@ -236,6 +234,8 @@ class InstagramAuth:
                         self.session.cookies.set(name, value)
                     
                     return session_data
+                else:
+                    print(f"⚠️ Session expirée pour {username}")
         
         except Exception as e:
             pass
@@ -740,22 +740,17 @@ class InstagramAuth:
         
         return session_data
     
-    def _save_session_fixed(self, session_file: str, session_data: dict, user_data: dict):
+    def _save_session_fixed(self, username: str, session_data: dict, user_data: dict):
         """
-        Sauvegarder session dans un fichier spécifique (méthode interne modifiée)
-        
-        Args:
-            session_file (str): Chemin complet du fichier
-            session_data (dict): Données de session  
-            user_data (dict): Données utilisateur
+        Sauvegarder session avec nom de fichier basique (par défaut)
+        Cette méthode n'est plus utilisée directement par le client
         """
         try:
-            # Créer le répertoire parent si nécessaire
-            parent_dir = os.path.dirname(session_file)
-            if parent_dir and not os.path.exists(parent_dir):
-                os.makedirs(parent_dir, exist_ok=True)
+            # Créer juste le nom basique avec username
+            session_file = f"{username}.json"
             
-            username = user_data.get("username", "user")
+            if not user_data.get("username"):
+                user_data["username"] = username
             
             # Format session instagrapi complet
             instagrapi_session = {
@@ -844,7 +839,7 @@ class InstagramAuth:
             
             with open(session_file, 'w', encoding='utf-8') as f:
                 json.dump(instagrapi_session, f, indent=2, ensure_ascii=False)
-                
+        
         except Exception as e:
             pass
     
