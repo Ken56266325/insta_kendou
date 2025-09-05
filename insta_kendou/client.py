@@ -252,300 +252,60 @@ class InstagramClient:
         # Validation licence obligatoire
         if not validate_license():
             raise LicenseError("Ce script n'est pas autorisé à utiliser cette bibliothèque. Veuillez contacter le créateur via: 0389561802 ou https://t.me/Kenny5626")
-
+        
         self.auth = InstagramAuth()
         self.session_data = session_data or {}
         self.api = None
-
+        
         if session_data:
             self.auth.session_data = session_data
             # Restaurer cookies
             if "cookies" in session_data:
                 for name, value in session_data["cookies"].items():
                     self.auth.session.cookies.set(name, value)
-
+            
             # Initialiser API
             user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
             auth_token = session_data.get("authorization_data", {}).get("authorization_header", "") or session_data.get("authorization", "")
             user_id = user_data.get("user_id", "") or session_data.get("account_id", "")
-
+            
             if user_id:
                 self.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token)
-
     
     def login(self, username: str, password: str) -> dict:
         """Connexion Instagram avec gestion 2FA complète"""
         return self.auth.login(username, password)
-
-    def load_session(self, session_file: str) -> dict:
-        """
-        Charger session depuis un fichier spécifique
+    
+    def load_session(self, username: str) -> dict:
+        """Charger session depuis le disque"""
+        session_data = self.auth.load_session(username)
+        if session_data:
+            self.session_data = session_data
+            
+            # Initialiser API avec session chargée
+            user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
+            auth_token = session_data.get("authorization_data", {}).get("authorization_header", "") or session_data.get("authorization", "")
+            user_id = user_data.get("user_id", "") or session_data.get("account_id", "")
+            
+            if user_id:
+                self.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token)
         
-        Args:
-            session_file (str): Chemin complet vers le fichier de session
-                               Exemples: "kenny_session.json", "sessions/kenny_ig.json", "./data/kenny_account.json"
+        return session_data
+    
+    def dump_session(self, username: str = None) -> dict:
+        """Sauvegarder la session actuelle"""
+        if not username and self.session_data:
+            # Récupérer username depuis session_data
+            user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
+            username = user_data.get("username") or self.session_data.get("account_username")
         
-        Returns:
-            dict: Données de session ou {} si échec
-        """
-        try:
-            if os.path.exists(session_file):
-                with open(session_file, 'r', encoding='utf-8') as f:
-                    session_data = json.load(f)
-                
-                created_at = session_data.get("created_at") or session_data.get("last_login") or session_data.get("session_created", 0)
-                
-                if time.time() - created_at < 7 * 24 * 3600:  # 7 jours
-                    # Extraire username du fichier de session pour les logs
-                    user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
-                    username = user_data.get("username", "utilisateur")
-                    print(f"✅ Session chargée pour @{username} depuis {session_file}")
-                    
-                    self.session_data = session_data
-                    
-                    cookies = session_data.get("cookies", {})
-                    for name, value in cookies.items():
-                        self.auth.session.cookies.set(name, value)
-                    
-                    # Initialiser API avec session chargée
-                    auth_token = session_data.get("authorization_data", {}).get("authorization_header", "") or session_data.get("authorization", "")
-                    user_id = user_data.get("user_id", "") or session_data.get("account_id", "")
-
-                    if user_id:
-                        self.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token)
-                    
-                    return session_data
-                else:
-                    user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
-                    username = user_data.get("username", "utilisateur")
-                    print(f"⚠️ Session expirée pour @{username} dans {session_file}")
-        
-        except Exception as e:
-            print(f"⚠️ Erreur lecture session {session_file}: {e}")
+        if username and self.session_data:
+            user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
+            # Utiliser _save_session_fixed de auth
+            self.auth._save_session_fixed(username, self.session_data, user_data)
+            return self.session_data
         
         return {}
-    
-    def dump_session(self, session_file: str = None) -> dict:
-        """
-        Sauvegarder la session actuelle dans un fichier spécifique
-        
-        Args:
-            session_file (str): Chemin complet vers le fichier de session
-                               Si None, utilise le username actuel avec suffixe par défaut
-                               Exemples: "kenny_session.json", "./data/kenny_account.json"
-        
-        Returns:
-            dict: Données de session sauvegardées ou {} si échec
-        """
-        try:
-            if not self.session_data:
-                print("❌ Aucune session active à sauvegarder")
-                return {}
-            
-            # Si pas de fichier spécifié, utiliser le username avec suffixe par défaut
-            if not session_file:
-                user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
-                username = user_data.get("username") or self.session_data.get("account_username", "user")
-                session_file = f"{username}_session.json"
-            
-            # Créer le répertoire parent s'il n'existe pas
-            session_dir = os.path.dirname(session_file)
-            if session_dir and not os.path.exists(session_dir):
-                os.makedirs(session_dir, exist_ok=True)
-            
-            # Extraire username pour la sauvegarde
-            user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
-            username = user_data.get("username") or self.session_data.get("account_username", "user")
-            
-            # Utiliser la méthode de sauvegarde existante mais avec fichier personnalisé
-            self._save_session_to_file(session_file, self.session_data, user_data)
-            
-            print(f"✅ Session sauvegardée pour @{username} dans {session_file}")
-            return self.session_data
-            
-        except Exception as e:
-            print(f"❌ Erreur sauvegarde session: {e}")
-            return {}
-
-    def load_multiple_sessions(self, pattern: str) -> dict:
-        """
-        Charger plusieurs sessions selon un pattern
-        
-        Args:
-            pattern (str): Pattern de fichiers à charger
-                          Exemples: "*_session.json", "accounts/*.json", "sessions/kenny_*.json"
-        
-        Returns:
-            dict: {username: session_data} pour chaque session trouvée
-        """
-        import glob
-        
-        sessions = {}
-        
-        try:
-            matching_files = glob.glob(pattern)
-            
-            for session_file in matching_files:
-                try:
-                    with open(session_file, 'r', encoding='utf-8') as f:
-                        session_data = json.load(f)
-                    
-                    created_at = session_data.get("created_at") or session_data.get("last_login") or session_data.get("session_created", 0)
-                    
-                    if time.time() - created_at < 7 * 24 * 3600:  # 7 jours
-                        user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
-                        username = user_data.get("username", os.path.basename(session_file).split('_')[0])
-                        
-                        sessions[username] = {
-                            "session_data": session_data,
-                            "file_path": session_file
-                        }
-                        print(f"✅ Session trouvée: @{username} ({session_file})")
-                    else:
-                        user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
-                        username = user_data.get("username", "inconnu")
-                        print(f"⚠️ Session expirée ignorée: @{username} ({session_file})")
-                        
-                except Exception as e:
-                    print(f"⚠️ Erreur lecture {session_file}: {e}")
-                    continue
-            
-            print(f"📊 {len(sessions)} sessions valides trouvées")
-            return sessions
-            
-        except Exception as e:
-            print(f"❌ Erreur chargement multiple: {e}")
-            return {}
-
-    def _save_session_to_file(self, session_file: str, session_data: dict, user_data: dict):
-        """Sauvegarder session dans un fichier spécifique (méthode interne)"""
-        try:
-            username = user_data.get("username", "user")
-            
-            # Format session instagrapi complet
-            instagrapi_session = {
-                "uuids": {
-                    "phone_id": str(uuid.uuid4()),
-                    "uuid": self.auth.device_manager.device_info['device_uuid'],
-                    "client_session_id": str(uuid.uuid4()),
-                    "advertising_id": str(uuid.uuid4()),
-                    "device_id": self.auth.device_manager.device_info['android_id']
-                },
-                "cookies": session_data.get("cookies", {}),
-                "last_login": session_data.get("created_at", int(time.time())),
-                "device_settings": {
-                    "cpu": "h1",
-                    "dpi": f"{self.auth.device_manager.device_info.get('screen_density', 320)}dpi",
-                    "model": self.auth.device_manager.device_info.get('model', 'SM-G991B'),
-                    "device": self.auth.device_manager.device_info.get('device', 'z3q'),
-                    "resolution": f"{self.auth.device_manager.device_info.get('screen_width', 900)}x{self.auth.device_manager.device_info.get('screen_height', 1600)}",
-                    "app_version": "394.0.0.46.81",
-                    "manufacturer": self.auth.device_manager.device_info.get('manufacturer', 'samsung'),
-                    "version_code": "779659870",
-                    "android_release": self.auth.device_manager.device_info.get('android_version', '12'),
-                    "android_version": int(self.auth.device_manager.device_info.get('sdk_version', 32))
-                },
-                "user_agent": self.auth.device_manager.device_info.get('user_agent', ''),
-                "country": "MG",
-                "country_code": 261,
-                "locale": "fr_FR", 
-                "timezone_offset": 10800,
-                
-                "authorization_data": {
-                    "ds_user_id": user_data.get("user_id", ""),
-                    "sessionid": session_data.get("sessionid", ""),
-                    "should_use_header_over_cookies": True,
-                    "authorization_header": session_data.get("authorization", ""),
-                    "username": user_data.get("username", username)
-                },
-                
-                "ig_headers": session_data.get("ig_headers", {}),
-                "user_data": {
-                    "user_id": user_data.get("user_id", ""),
-                    "username": user_data.get("username", username),
-                    "full_name": user_data.get("full_name", ""),
-                    "is_verified": user_data.get("is_verified", False),
-                    "is_private": user_data.get("is_private", False),
-                    "profile_pic_url": user_data.get("profile_pic_url", ""),
-                    "is_business": user_data.get("is_business", False)
-                },
-                "session_created": session_data.get("created_at", int(time.time())),
-                
-                "logged_in_user": {
-                    "user_id": user_data.get("user_id", ""),
-                    "username": user_data.get("username", username),
-                    "full_name": user_data.get("full_name", ""),
-                    "is_verified": user_data.get("is_verified", False),
-                    "is_private": user_data.get("is_private", False),
-                    "profile_pic_url": user_data.get("profile_pic_url", ""),
-                    "is_business": user_data.get("is_business", False),
-                    "phone_number": user_data.get("phone_number", ""),
-                    "country_code": user_data.get("country_code", ""),
-                    "national_number": user_data.get("national_number", "")
-                },
-                "account_id": user_data.get("user_id", ""),
-                "account_username": user_data.get("username", username),
-                "rank_token": f"{user_data.get('user_id', '')}_{uuid.uuid4()}",
-                "csrf_token": "missing",
-                
-                "session_metadata": {
-                    "login_timestamp": int(time.time()),
-                    "session_start_time": time.time(),
-                    "pigeon_session_id": f"UFS-{uuid.uuid4()}-0",
-                    "conn_uuid_client": str(uuid.uuid4()).replace('-', ''),
-                    "bandwidth_test_data": {
-                        "speed_kbps": random.uniform(2000, 5000),
-                        "total_bytes": random.randint(1000000, 10000000),
-                        "total_time_ms": random.randint(500, 2000)
-                    },
-                    "salt_ids": [332011630, random.randint(220140000, 220150000)],
-                    "bloks_version_id": "e061cacfa956f06869fc2b678270bef1583d2480bf51f508321e64cfb5cc12bd"
-                }
-            }
-            
-            if session_data.get("sessionid"):
-                instagrapi_session["cookies"]["sessionid"] = session_data["sessionid"]
-                instagrapi_session["cookies"]["ds_user_id"] = user_data.get("user_id", "")
-            
-            with open(session_file, 'w', encoding='utf-8') as f:
-                json.dump(instagrapi_session, f, indent=2, ensure_ascii=False)
-        
-        except Exception as e:
-            raise Exception(f"Erreur sauvegarde: {e}")
-
-    # Méthodes de compatibilité pour l'ancien système (optionnelles)
-    def load_session_by_username(self, username: str, session_suffix: str = "_session.json") -> dict:
-        """
-        Charger session par username avec suffixe personnalisé
-        
-        Args:
-            username (str): Nom d'utilisateur
-            session_suffix (str): Suffixe du fichier (défaut: "_session.json")
-        
-        Returns:
-            dict: Données de session
-        """
-        session_file = f"{username}{session_suffix}"
-        return self.load_session(session_file)
-
-    def dump_session_with_suffix(self, session_suffix: str = "_session.json") -> dict:
-        """
-        Sauvegarder avec suffixe personnalisé
-        
-        Args:
-            session_suffix (str): Suffixe du fichier (défaut: "_session.json")
-        
-        Returns:
-            dict: Données de session sauvegardées
-        """
-        if not self.session_data:
-            return {}
-        
-        user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
-        username = user_data.get("username") or self.session_data.get("account_username", "user")
-        session_file = f"{username}{session_suffix}"
-        
-        return self.dump_session(session_file)
     
     def get_x_mid(self) -> str:
         """Récupérer x-mid depuis le device manager"""
