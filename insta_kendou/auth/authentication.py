@@ -74,8 +74,6 @@ class InstagramAuth:
         }
         
         try:
-            print("♻ Connexion en cours...")
-            
             # Synchronisation pré-connexion
             if not self._sync_pre_login():
                 result["message"] = "Échec de la synchronisation pré-connexion"
@@ -100,7 +98,7 @@ class InstagramAuth:
                 "https://i.instagram.com/api/v1/bloks/async_action/com.bloks.www.bloks.caa.login.async.send_login_request/",
                 headers=headers,
                 data=payload_data,
-                timeout=15
+                timeout=60
             )
             
             response_text = InstagramEncryption.safe_decode_response(response)
@@ -226,7 +224,6 @@ class InstagramAuth:
                 created_at = session_data.get("created_at") or session_data.get("last_login") or session_data.get("session_created", 0)
                 
                 if time.time() - created_at < 7 * 24 * 3600:
-                    print(f"✅ Session existante chargée pour {username}")
                     self.session_data = session_data
                     
                     cookies = session_data.get("cookies", {})
@@ -950,7 +947,7 @@ class InstagramAuth:
         """Extraire message d'erreur de la réponse"""
         response_str = str(response_data)
         
-        if "n\\u2019avons pas trouv\\u00e9 votre compte" in response_str or "Nous n'avons pas trouvé votre compte" in response_str:
+        if "n\\u2019avons pas trouv\\u00e9 votre compte" in response_str or "Nous n'avons pas trouvé votre compte" in response_str or "un nouveau compte" in response_str or "rifiez votr  nom de profil" in response_str :
             return "user_not_found"
         elif "Ces infos de connexion n\\u2019ont pas fonctionn\\u00e9" in response_str or "Ces infos de connexion n'ont pas fonctionné" in response_str:
             return "invalid_credentials"  
