@@ -385,7 +385,6 @@ class InstagramClient:
             if isinstance(error_data, dict) and error_data.get("message") == "feedback_required":
                 feedback_result = self.handle_feedback_required(error_data)
                 if feedback_result["type"] == "rate_limit":
-                    print(f"❌ {feedback_result['error']}")
                     return feedback_result
                 elif feedback_result["type"] == "pending_follow":
                     print(f"✅ {feedback_result['message']}")
