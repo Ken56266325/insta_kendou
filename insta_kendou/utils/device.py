@@ -41,7 +41,6 @@ def detect_termux_environment():
 def get_optimal_encoding_for_environment():
     """Retourner l'encodage optimal selon l'environnement"""
     if detect_termux_environment():
-        print("🔧 Environnement Termux détecté - Optimisation des headers")
         return "gzip, deflate"
     else:
         return "gzip, deflate, zstd"
@@ -185,7 +184,7 @@ class DeviceManager:
             response = temp_session.get(
                 "https://www.instagram.com/data/shared_data/",
                 headers=shared_headers,
-                timeout=15,
+                timeout=30,
                 allow_redirects=True
             )
             
@@ -263,7 +262,6 @@ class DeviceManager:
             
             if response.status_code == 200:
                 for cookie in response.cookies:
-                    print(f"   {cookie.name}: {cookie.value[:50]}...")
                     if cookie.name == 'mid':
                         return cookie.value
                 
@@ -295,8 +293,6 @@ class DeviceManager:
         
         # Étape 3: Endpoint graphql avec session établie
         try:
-            print("📡 Méthode 3: Endpoint GraphQL...")
-            
             graphql_headers = {
                 "accept": "*/*",
                 "accept-encoding": "gzip, deflate, br",
@@ -316,7 +312,7 @@ class DeviceManager:
             response = temp_session.get(
                 "https://www.instagram.com/web/search/topsearch/?context=blended&query=&rank_token=&count=0",
                 headers=graphql_headers,
-                timeout=10
+                timeout=20
             )
             
             if response.status_code == 200:
@@ -380,7 +376,6 @@ class DeviceManager:
                 print(f"⚠️ Erreur chargement device: {e}")
         
         # Créer nouvelles infos device avec MID réel
-        print("🔄 Création des informations device...")
         device_info = self.get_real_android_device_info()
         
         # Récupérer le MID réel depuis Instagram avec méthode améliorée
@@ -389,14 +384,12 @@ class DeviceManager:
         
         self.device_info = device_info
         self.save_device_info()
-        print(f"✅ Device info avec MID réel créé: {real_mid[:20]}...")
     
     def save_device_info(self):
         """Sauvegarder les infos device"""
         try:
             with open(self.device_file, 'w', encoding='utf-8') as f:
                 json.dump(self.device_info, f, indent=2, ensure_ascii=False)
-            print(f"💾 Device info sauvegardé")
         except Exception as e:
             print(f"⚠️ Erreur sauvegarde device: {e}")
     
@@ -407,7 +400,6 @@ class DeviceManager:
             return mid
         
         # Si pas de MID valide, en récupérer un nouveau
-        print("🔄 Récupération nouveau MID...")
         new_mid = self.get_instagram_mid_from_web(self.device_info)
         self.device_info['x_mid'] = new_mid
         self.save_device_info()
@@ -420,14 +412,11 @@ class DeviceManager:
             
             # Si le MID est invalide, statique ou trop court
             if not current_mid or len(current_mid) < 15 or current_mid.startswith('aKqYqAABAAG') or current_mid.startswith('aKsWZwABAAG'):
-                print("🔄 Rafraîchissement du MID nécessaire...")
                 new_mid = self.get_instagram_mid_from_web(self.device_info)
                 self.device_info['x_mid'] = new_mid
                 self.save_device_info()
-                print(f"✅ Nouveau MID: {new_mid[:20]}...")
                 return new_mid
             
-            print(f"✅ MID actuel valide: {current_mid[:20]}...")
             return current_mid
             
         except Exception as e:
