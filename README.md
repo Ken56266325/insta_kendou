@@ -1,26 +1,33 @@
 # insta_kendou
 
-Bibliothèque Instagram avancée pour automatisation et gestion de comptes.
+Bibliothèque Instagram complète avec authentification 2FA et gestion des médias.
 
 ## Installation
 
 ```bash
-pip install git+https://github.com/Ken56266325/insta_kendou.git
+pip install insta_kendou
+```
+
+## Utilisation
+
+```python
+from insta_kendou import InstagramClient
+
+# Initialiser le client
+client = InstagramClient()
+
+# Se connecter
+result = client.login("username", "password")
+
+# Utiliser les fonctionnalités
+if result["success"]:
+    # Liker un post
+    client.like_post("https://instagram.com/p/ABC123/")
+    
+    # Publier une story
+    client.upload_story("/path/to/image.jpg")
 ```
 
 ## Licence
 
-Utilisation sous licence propriétaire. Contact requis pour autorisation d'usage.
-
-## Contact
-
-- Téléphone: 0389561802
-- Telegram: https://t.me/Kenny5626
-
-## Compatibilité
-
-- Python 3.7+
-- Android (Termux)
-- Linux
-- Windows
-- macOS
+Propriétaire - Contactez le créateur pour les droits d'utilisation.

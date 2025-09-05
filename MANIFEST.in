@@ -1,20 +1,628 @@
-# MANIFEST.in - Fichiers à inclure dans le package
+# insta_kendou - Bibliothèque Instagram Complète
 
-# Documentation
-include README.md
-include requirements.txt
-include LICENSE
+## 📋 Table des matières
 
-# Fichiers de configuration
-recursive-include insta_kendou *.py
-recursive-include insta_kendou *.json
-recursive-include insta_kendou *.txt
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Authentification](#authentification)
+- [Actions de base](#actions-de-base)
+- [Gestion des médias](#gestion-des-médias)
+- [Informations utilisateur](#informations-utilisateur)
+- [Recherche et découverte](#recherche-et-découverte)
+- [Actions avancées](#actions-avancées)
+- [Gestion des sessions](#gestion-des-sessions)
+- [Gestion d'erreurs](#gestion-derreurs)
+- [Support](#support)
 
-# Exclure les fichiers temporaires
-recursive-exclude * __pycache__
-recursive-exclude * *.py[co]
-recursive-exclude * .DS_Store
-recursive-exclude * .git*
+## 🚀 Installation
 
-# Outils de build (ne pas inclure dans le package final)
-exclude build_tools/*
+```bash
+# Installation depuis GitHub
+pip install git+https://github.com/Ken56266325/insta_kendou.git
+```
+
+## ⚙️ Configuration
+
+### Code d'accès obligatoire
+
+**IMPORTANT**: Cette bibliothèque nécessite un code d'accès pour fonctionner. Intégrez ce code dans votre script :
+
+```python
+# CODE D'ACCÈS OBLIGATOIRE
+ACCESS_CODE = "MampifalyfelicienKennyNestinFoad56266325$17Mars2004FeliciteGemmellineNestine"
+```
+
+### Import de base
+
+```python
+from insta_kendou import InstagramClient
+
+# Import des exceptions (optionnel)
+from insta_kendou import (
+    InstagramError,
+    AuthenticationError,
+    TwoFactorError,
+    ChallengeError,
+    MediaError,
+    LicenseError
+)
+```
+
+## 🔐 Authentification
+
+### Connexion simple
+
+```python
+client = InstagramClient()
+
+# Connexion avec identifiants
+result = client.login("username", "password")
+
+if result["success"]:
+    print(f"✅ Connecté en tant que @{result['user_data']['username']}")
+    print(f"👥 {result['user_data']['follower_count']:,} abonnés")
+else:
+    print(f"❌ Erreur: {result['message']}")
+```
+
+### Gestion 2FA automatique
+
+La bibliothèque gère automatiquement :
+- **Bloks 2FA** : Flux moderne Instagram
+- **2FA Alternatif** : Nouveaux défis de sécurité  
+- **2FA Classique** : Codes SMS/Email traditionnels
+- **Challenge/Checkpoint** : Résolution automatique
+
+```python
+# La 2FA est gérée automatiquement
+result = client.login("username", "password")
+
+# Types de réponses possibles:
+if result["success"]:
+    print("Connexion réussie!")
+elif result["message"] == "user_not_found":
+    print("Utilisateur inexistant")
+elif result["message"] == "password_incorrect":
+    print("Mot de passe incorrect")
+elif "2FA" in result["message"]:
+    print("2FA en cours de résolution...")
+```
+
+### Sessions persistantes
+
+```python
+# Charger session existante
+session_data = client.load_session("username")
+
+if session_data:
+    print("✅ Session chargée")
+else:
+    # Connexion requise
+    result = client.login("username", "password")
+
+# Sauvegarder session
+client.dump_session("username")
+```
+
+## ❤️ Actions de base
+
+### Liker un post
+
+```python
+# Liker avec URL complète
+result = client.like_post("https://www.instagram.com/p/ABC123/")
+
+# Liker avec lien court
+result = client.like_post("https://instagr.am/p/ABC123/")
+
+# Afficher Media ID (optionnel)
+if client.api:
+    media_id = client.api.extract_media_id_from_url(url)
+    print(f"📷 Media ID: {media_id}")
+
+# Vérifier le résultat
+if result["success"]:
+    print("✅ Like réussi!")
+else:
+    print(f"❌ Erreur: {result['error']}")
+```
+
+### Commenter un post
+
+```python
+# Commenter
+result = client.comment_post(
+    "https://www.instagram.com/p/ABC123/",
+    "Super post! 🔥"
+)
+
+# Avec affichage du Media ID
+if client.api:
+    media_id = client.api.extract_media_id_from_url(url)
+    print(f"📷 Media ID: {media_id}")
+
+if result["success"]:
+    print("✅ Commentaire ajouté!")
+else:
+    print(f"❌ Erreur: {result['error']}")
+```
+
+### Suivre un utilisateur
+
+```python
+# URL complète
+result = client.follow_user("https://www.instagram.com/username/")
+
+# Username simple (ajout automatique d'URL)
+result = client.follow_user("@username")
+
+# Afficher User ID (optionnel)
+if client.api:
+    user_id = client.api.extract_user_id_from_url(url)
+    print(f"👤 User ID: {user_id}")
+
+if result["success"]:
+    print("✅ Follow réussi!")
+else:
+    print(f"❌ Erreur: {result['error']}")
+```
+
+## 📱 Gestion des médias
+
+### Publier une story
+
+```python
+# Upload story
+result = client.upload_story("/path/to/image.jpg")
+
+if result["success"]:
+    print("✅ Story publiée!")
+else:
+    print(f"❌ Erreur: {result['error']}")
+
+# Formats supportés: JPG, PNG
+# Résolution optimale: 720x1280 (9:16)
+```
+
+### Publier un post
+
+```python
+# Post avec légende
+result = client.upload_post(
+    "/path/to/image.jpg",
+    "Ma super photo! #insta #photo"
+)
+
+# Post sans légende
+result = client.upload_post("/path/to/image.jpg")
+
+if result["success"]:
+    print("✅ Post publié!")
+else:
+    print(f"❌ Erreur: {result['error']}")
+
+# Formats supportés: JPG, PNG
+# Résolution optimale: 1080x1080
+```
+
+### Supprimer une publication
+
+```python
+# Supprime la dernière publication
+result = client.delete_last_post()
+
+if result["success"]:
+    print("✅ Publication supprimée!")
+else:
+    print(f"❌ Erreur: {result['error']}")
+```
+
+## 👤 Informations utilisateur
+
+### Mon compte
+
+```python
+result = client.get_account_info()
+
+if result["success"]:
+    data = result["data"]
+    print(f"Username: @{data['username']}")
+    print(f"User ID: {client._get_user_id_from_session()}")
+    print(f"Nom: {data['full_name']}")
+    print(f"Statut: {data['account_status']}")
+    print(f"Abonnés: {data['follower_count']:,}")
+    print(f"Abonnements: {data['following_count']:,}")
+    print(f"Publications: {data['media_count']:,}")
+    print(f"Bio: {data['biography']}")
+```
+
+### Infos d'un utilisateur
+
+```python
+result = client.get_user_info("https://www.instagram.com/username/")
+
+# Afficher User ID extrait
+if client.api:
+    user_id = client.api.extract_user_id_from_url(url)
+    print(f"👤 User ID: {user_id}")
+
+if result["success"]:
+    data = result["data"]
+    print(f"Username: @{data['username']}")
+    print(f"User ID: {data['user_id']}")
+    print(f"Nom: {data['full_name']}")
+    print(f"Statut: {data['account_status']}")
+    print(f"Vérifié: {'Oui' if data['is_verified'] else 'Non'}")
+    print(f"Abonnés: {data['follower_count']:,}")
+```
+
+### Infos d'un post
+
+```python
+result = client.get_media_info("https://www.instagram.com/p/ABC123/")
+
+# Afficher Media ID extrait
+if client.api:
+    media_id = client.api.extract_media_id_from_url(url)
+    print(f"📷 Media ID: {media_id}")
+
+if result["success"]:
+    data = result["data"]
+    print(f"Media ID: {data['id']}")
+    print(f"Code: {data['code']}")
+    print(f"Likes: {data['like_count']:,}")
+    print(f"Commentaires: {data['comment_count']:,}")
+    print(f"Auteur: @{data['owner']['username']}")
+    print(f"Caption: {data['caption']}")
+```
+
+## 🔍 Recherche et découverte
+
+### Rechercher des utilisateurs
+
+```python
+result = client.search_users("kenny", count=20)
+
+if result["success"]:
+    users = result["data"]
+    print(f"🔍 {len(users)} résultats:")
+    
+    for user in users:
+        verified = " ✅" if user['is_verified'] else ""
+        private = " 🔒" if user['is_private'] else ""
+        print(f"@{user['username']}{verified}{private}")
+        print(f"  {user['full_name']} - {user['follower_count']:,} abonnés")
+```
+
+### Timeline/Feed
+
+```python
+result = client.get_timeline_feed(count=15)
+
+if result["success"]:
+    posts = result["data"]
+    print(f"📱 {len(posts)} posts dans votre timeline:")
+    
+    for post in posts:
+        user = post['user']
+        print(f"@{user['username']}")
+        print(f"  ❤️ {post['like_count']:,} | 💬 {post['comment_count']:,}")
+        if post['caption']:
+            print(f"  📝 {post['caption'][:80]}...")
+```
+
+### Abonnés et abonnements
+
+```python
+# Mes abonnés
+result = client.get_followers(count=50)
+
+# Mes abonnements
+result = client.get_following(count=50)
+
+# Abonnés d'un utilisateur
+result = client.get_followers("https://www.instagram.com/username/", count=50)
+
+# Abonnements d'un utilisateur
+result = client.get_following("https://www.instagram.com/username/", count=50)
+
+if result["success"]:
+    users = result["data"]
+    for user in users:
+        verified = " ✅" if user['is_verified'] else ""
+        print(f"@{user['username']}{verified}")
+        print(f"  {user['full_name']}")
+```
+
+### Posts d'un utilisateur
+
+```python
+result = client.get_user_media_list("https://www.instagram.com/username/", count=12)
+
+if result["success"]:
+    posts = result["data"]
+    print(f"📸 {len(posts)} derniers posts:")
+    
+    for post in posts:
+        print(f"Post {post['code']}")
+        print(f"  ❤️ {post['like_count']:,} | 💬 {post['comment_count']:,}")
+        if post['caption']:
+            print(f"  📝 {post['caption'][:60]}...")
+```
+
+### Interactions d'un post
+
+```python
+# Commentaires
+result = client.get_media_comments("https://www.instagram.com/p/ABC123/", count=20)
+
+if result["success"]:
+    comments = result["data"]
+    for comment in comments:
+        user = comment['user']
+        print(f"@{user['username']}: {comment['text']}")
+
+# Utilisateurs qui ont liké
+result = client.get_media_likers("https://www.instagram.com/p/ABC123/", count=50)
+
+if result["success"]:
+    likers = result["data"]
+    for user in likers:
+        verified = " ✅" if user['is_verified'] else ""
+        print(f"@{user['username']}{verified}")
+```
+
+## 🚀 Actions avancées
+
+### Unlike et Unfollow
+
+```python
+# Unlike un post
+result = client.unlike_post("https://www.instagram.com/p/ABC123/")
+
+# Ne plus suivre
+result = client.unfollow_user("https://www.instagram.com/username/")
+
+if result["success"]:
+    print("✅ Action réussie!")
+else:
+    print(f"❌ Erreur: {result['error']}")
+```
+
+### Changer confidentialité
+
+```python
+result = client.toggle_account_privacy()
+
+if result["success"]:
+    new_status = result["data"]["new_status"]
+    print(f"✅ Compte maintenant: {new_status}")
+else:
+    print(f"❌ Erreur: {result['error']}")
+```
+
+### Supprimer un commentaire
+
+```python
+# Nécessite l'ID du commentaire
+result = client.delete_comment(
+    "https://www.instagram.com/p/ABC123/",
+    "comment_id_here"
+)
+```
+
+### Mes publications
+
+```python
+if client.api:
+    posts = client.api.get_own_media_list(10)
+    
+    for post in posts:
+        print(f"Post {post['code']}")
+        print(f"  ❤️ {post['like_count']:,} likes")
+        if post['caption']:
+            print(f"  📝 {post['caption'][:50]}...")
+```
+
+## 💾 Gestion des sessions
+
+### Informations de session
+
+```python
+# Informations techniques
+print(f"Username: @{client._get_username_from_session()}")
+print(f"User ID: {client._get_user_id_from_session()}")
+print(f"X-MID: {client.get_x_mid()}")
+print(f"Auth Token: {'Présent' if client._get_auth_token() else 'Absent'}")
+```
+
+### Sauvegarde manuelle
+
+```python
+# Sauvegarder session actuelle
+session_data = client.dump_session("username")
+
+if session_data:
+    print("✅ Session sauvegardée")
+    print(f"📄 Fichier: sessions/username_ig_complete.json")
+```
+
+## 🔧 Extraction d'IDs
+
+### Media ID et User ID
+
+```python
+# Extraire Media ID
+if client.api:
+    media_id = client.api.extract_media_id_from_url("https://www.instagram.com/p/ABC123/")
+    print(f"📷 Media ID: {media_id}")
+
+# Extraire User ID avec recherche similaire
+if client.api:
+    user_id = client.api.extract_user_id_from_url("https://www.instagram.com/username/")
+    print(f"👤 User ID: {user_id}")
+
+# Supporte tous les types de liens courts:
+# - https://instagr.am/p/ABC123/
+# - https://bit.ly/shortlink
+# - https://vt.tiktok.com/ZS123/
+# - etc.
+```
+
+## ❌ Gestion d'erreurs
+
+### Format de retour standard
+
+```python
+# TOUTES les actions retournent:
+{
+    "success": True/False,
+    "error": "message d'erreur détaillé", 
+    "data": {
+        # Données spécifiques à l'action
+    }
+}
+```
+
+### Vérification des résultats
+
+```python
+result = client.like_post(url)
+
+if result["success"]:
+    print("✅ Action réussie!")
+    # Accéder aux données: result["data"]
+else:
+    print(f"❌ Erreur détaillée: {result['error']}")
+    
+    # Types d'erreurs courants:
+    # "Ce media a été supprimé"
+    # "Utilisateur introuvable" 
+    # "Le compte @username est suspendu"
+    # "Votre compte a atteint la limite"
+    # "Follow en attente de validation"
+```
+
+### Gestion des exceptions
+
+```python
+try:
+    result = client.login("username", "password")
+except LicenseError:
+    print("❌ Code d'accès requis dans le script")
+except AuthenticationError as e:
+    print(f"❌ Erreur d'authentification: {e}")
+except TwoFactorError as e:
+    print(f"❌ Erreur 2FA: {e}")
+except MediaError as e:
+    print(f"❌ Erreur média: {e}")
+except InstagramError as e:
+    print(f"❌ Erreur Instagram: {e}")
+```
+
+## 🔗 Types de liens supportés
+
+La bibliothèque résout automatiquement tous les types de liens courts :
+
+```python
+# URLs Instagram standard
+"https://www.instagram.com/p/ABC123/"
+"https://www.instagram.com/username/"
+
+# Liens courts Instagram
+"https://instagr.am/p/ABC123/"
+"https://ig.me/ABC123"
+
+# Liens courts génériques
+"https://bit.ly/shortlink"
+"https://tinyurl.com/shortlink"
+"https://t.co/shortlink"
+
+# Liens TikTok (pour test)
+"https://vt.tiktok.com/ZS123/"
+
+# Et tous autres services de liens courts
+```
+
+## 📊 Formats de données
+
+### Login
+
+```python
+{
+    "success": True,
+    "message": "Connexion réussie",
+    "user_data": {
+        "user_id": "123456789",
+        "username": "username",
+        "full_name": "Nom Complet",
+        "is_verified": False,
+        "is_private": False,
+        "follower_count": 1500,
+        "following_count": 800,
+        "media_count": 45
+    },
+    "session_data": {
+        "cookies": {...},
+        "authorization": "Bearer IGT:2:...",
+        "created_at": 1703001234
+    },
+    "status": "active"  # ou "suspended", "disabled"
+}
+```
+
+### User Info
+
+```python
+{
+    "success": True,
+    "data": {
+        "user_id": "123456789",
+        "username": "username",
+        "full_name": "Nom Complet",
+        "is_private": False,
+        "account_status": "Public",
+        "is_verified": False,
+        "is_business": False,
+        "follower_count": 1500,
+        "following_count": 800,
+        "media_count": 45,
+        "biography": "Ma bio Instagram",
+        "profile_pic_url": "https://..."
+    }
+}
+```
+
+### Media Info
+
+```python
+{
+    "success": True,
+    "data": {
+        "id": "123456789_123456789",
+        "code": "ABC123def456",
+        "media_type": 1,  # 1=photo, 2=video
+        "like_count": 250,
+        "comment_count": 15,
+        "caption": "Légende du post",
+        "owner": {
+            "user_id": "123456789",
+            "username": "username"
+        }
+    }
+}
+```
+
+## 🛠️ Support et contact
+
+- **Téléphone**: 0389561802
+- **Telegram**: https://t.me/Kenny5626
+- **GitHub**: https://github.com/Ken56266325/insta_kendou
+
+## 📄 Licence
+
+Cette bibliothèque nécessite un code d'accès pour fonctionner. Contactez le créateur pour obtenir les droits d'utilisation.
+
+---
+
+**⚠️ Note importante**: Cette bibliothèque est destinée à un usage personnel et éducatif. Respectez les conditions d'utilisation d'Instagram et utilisez-la de manière responsable.

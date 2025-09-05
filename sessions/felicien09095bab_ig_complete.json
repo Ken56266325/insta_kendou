@@ -1,0 +1,85 @@
+{
+  "uuids": {
+    "phone_id": "d5b1269a-0284-4479-897f-ee9434d2aeb5",
+    "uuid": "009d2bb6-ff4d-5893-9af6-5c1c978d9134",
+    "client_session_id": "e3d11cc0-9e02-46dd-936f-adbf39576f79",
+    "advertising_id": "f13e5771-c479-4567-86f1-0ab533ea668b",
+    "device_id": "android-3d43d23362b37952"
+  },
+  "cookies": {
+    "sessionid": "58768170545%3AId5zmo7Rbeo1Ta%3A9%3AAYftMeLYbmc6ijHsK5Lsajb1DGG7Wc01NzUnB25Bew",
+    "ds_user_id": "58768170545"
+  },
+  "last_login": 1757009579,
+  "device_settings": {
+    "cpu": "h1",
+    "dpi": "320dpi",
+    "model": "SM-G991B",
+    "device": "z3q",
+    "resolution": "900x1600",
+    "app_version": "394.0.0.46.81",
+    "manufacturer": "samsung",
+    "version_code": "779659870",
+    "android_release": "12",
+    "android_version": 32
+  },
+  "user_agent": "Instagram 394.0.0.46.81 Android (32/12; 320dpi; 900x1600; samsung; SM-G991B; z3q; exynos8895; fr_FR; 779659870)",
+  "country": "MG",
+  "country_code": 261,
+  "locale": "fr_FR",
+  "timezone_offset": 10800,
+  "authorization_data": {
+    "ds_user_id": "58768170545",
+    "sessionid": "58768170545%3AId5zmo7Rbeo1Ta%3A9%3AAYftMeLYbmc6ijHsK5Lsajb1DGG7Wc01NzUnB25Bew",
+    "should_use_header_over_cookies": true,
+    "authorization_header": "Bearer IGT:2:eyJkc191c2VyX2lkIjoiNTg3NjgxNzA1NDUiLCJzZXNzaW9uaWQiOiI1ODc2ODE3MDU0NSUzQUlkNXptbzdSYmVvMVRhJTNBOSUzQUFZZnRNZUxZYm1jNmlqSHNLNUxzYWpiMURHRzdXYzAxTnpVbkIyNUJldyJ9",
+    "username": "felicien09095bab"
+  },
+  "ig_headers": {
+    "x-ig-www-claim": "hmac.AR0gigjvYfXDP3sCtKHklnUuIvadPjHaUGCxH3vFP3G_eoqC\\",
+    "ig-u-ds-user-id": "58768170545",
+    "ig-u-rur": "CLN\\"
+  },
+  "user_data": {
+    "user_id": "58768170545",
+    "username": "felicien09095bab",
+    "full_name": "",
+    "is_verified": false,
+    "is_private": false,
+    "profile_pic_url": "",
+    "is_business": false
+  },
+  "session_created": 1757009579,
+  "logged_in_user": {
+    "user_id": "58768170545",
+    "username": "felicien09095bab",
+    "full_name": "",
+    "is_verified": false,
+    "is_private": false,
+    "profile_pic_url": "",
+    "is_business": false,
+    "phone_number": "",
+    "country_code": "",
+    "national_number": ""
+  },
+  "account_id": "58768170545",
+  "account_username": "felicien09095bab",
+  "rank_token": "58768170545_95f2c0dd-dd6f-4e25-a68b-4c3f4ff471f6",
+  "csrf_token": "missing",
+  "session_metadata": {
+    "login_timestamp": 1757009579,
+    "session_start_time": 1757009579.4941788,
+    "pigeon_session_id": "UFS-e17d9ff7-b33a-4bdf-8603-eb49e6782ac7-0",
+    "conn_uuid_client": "6d13de2e59a24822b74430b8d53c910e",
+    "bandwidth_test_data": {
+      "speed_kbps": 2911.219721652552,
+      "total_bytes": 5733594,
+      "total_time_ms": 1434
+    },
+    "salt_ids": [
+      332011630,
+      220140820
+    ],
+    "bloks_version_id": "e061cacfa956f06869fc2b678270bef1583d2480bf51f508321e64cfb5cc12bd"
+  }
+}

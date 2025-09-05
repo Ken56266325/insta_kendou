@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Résolveur d'URLs Instagram avec support liens courts - CORRIGÉ
-Gestion complète des liens courts, extraction media/user IDs avec recherche similaire
+Résolveur d'URLs Instagram avec support liens courts
+Gestion complète des liens court, extraction media/user IDs
 """
 
 import re
@@ -12,7 +12,7 @@ from .license import validate_license
 from .encryption import InstagramEncryption
 
 class URLResolver:
-    """Résolveur d'URLs Instagram avec support complet des liens courts et recherche similaire"""
+    """Résolveur d'URLs Instagram avec support complet des liens courts"""
     
     def __init__(self):
         # Validation licence obligatoire
@@ -117,7 +117,7 @@ class URLResolver:
             return None
     
     def extract_user_id_from_url(self, url: str, api_session=None) -> str:
-        """Extraire user ID depuis URL de profil avec recherche similaire EXACTEMENT comme script original"""
+        """Extraire user ID depuis URL de profil (avec résolution liens courts et recherche similaire)"""
         try:
             # D'abord résoudre les liens courts
             resolved_url = self.resolve_short_url(url)
@@ -139,7 +139,7 @@ class URLResolver:
             return None
     
     def _username_to_user_id_with_similarity(self, username: str, api_session) -> str:
-        """Convertir username en user ID avec recherche de similarité EXACTEMENT comme script original"""
+        """Convertir username en user ID avec recherche de similarité"""
         try:
             username = username.replace('@', '').strip()
             
@@ -180,7 +180,7 @@ class URLResolver:
                                 print(f"👥 User trouvé (exact): @{username} -> {user_id}")
                                 return user_id
                         
-                        # Si pas trouvé exact, chercher des similitudes EXACTEMENT comme script original
+                        # Si pas trouvé exact, chercher des similitudes
                         target_lower = username.lower()
                         best_matches = []
                         
@@ -198,14 +198,13 @@ class URLResolver:
                             print(f"👥 User similaire trouvé: @{username} -> @{found_username} -> {user_id}")
                             return user_id
                         
-                        # Recherche par parties de nom EXACTEMENT comme script original
+                        # Recherche par parties de nom
                         username_parts = target_lower.split('_') + target_lower.split('.')
                         for user in users:
                             user_username = user.get("username", "").lower()
                             if any(part in user_username for part in username_parts if len(part) > 2):
                                 user_id = str(user.get("pk"))
-                                found_username = user.get("username", "")
-                                print(f"👥 User similaire trouvé (partie): @{username} -> @{found_username} -> {user_id}")
+                                print(f"👥 User similaire trouvé (partie): @{username} -> @{user_username} -> {user_id}")
                                 return user_id
                         
                 except Exception:

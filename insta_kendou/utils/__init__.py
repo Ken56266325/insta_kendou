@@ -8,14 +8,15 @@ from .device import DeviceManager, get_optimal_encoding_for_environment, detect_
 from .encryption import InstagramEncryption
 from .media import MediaProcessor
 from .url_resolver import URLResolver
-from .license import validate_license
+from .license import validate_license, LicenseError
 
 __all__ = [
     'DeviceManager',
-    'get_optimal_encoding_for_environment', 
+    'get_optimal_encoding_for_environment',
     'detect_termux_environment',
     'InstagramEncryption',
     'MediaProcessor',
     'URLResolver',
-    'validate_license'
+    'validate_license',
+    'LicenseError'
 ]

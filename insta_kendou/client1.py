@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Client principal Instagram pour insta_kendou
-Classe InstagramClient avec toutes les fonctionnalités complètes
+Client Instagram principal pour insta_kendou
+Intégration complète de toutes les fonctionnalité Instagram
 """
 
 import os
@@ -9,155 +9,46 @@ import time
 import json
 import uuid
 import random
+import hashlib
+import hmac
+import base64
 import urllib.parse
-import re
-from .auth import InstagramAuth
-from .utils import DeviceManager, InstagramEncryption, MediaProcessor, URLResolver, validate_license
+import requests
+from typing import Dict, Optional, Any
+
+from .utils.license import validate_license
+from .utils.device import DeviceManager
+from .utils.encryption import InstagramEncryption
+from .utils.media import MediaProcessor
+from .utils.url_resolver import URLResolver
+from .auth.authentication import InstagramAuth
 from .exceptions import *
 
-# -*- coding: utf-8 -*-
-"""
-API Instagram corrigée pour le client - EXACTEMENT comme script original
-"""
-
 class InstagramAPI:
-    """API Instagram pour extraire media ID et user ID (intégrée au client) - CORRIGÉE"""
+    """API Instagram pour extraire media ID et user ID"""
     
-    def __init__(self, session, device_info: dict, user_id: str = None, auth_token: str = None):
+    def __init__(self, session: requests.Session, device_info: dict, user_id: str = None, auth_token: str = None, url_resolver: URLResolver = None):
         self.session = session
         self.device_info = device_info
         self.user_id = user_id
         self.auth_token = auth_token
-        self.url_resolver = URLResolver()
-    
+        self.url_resolver = url_resolver or URLResolver()
+        
     def shortcode_to_media_id(self, shortcode: str) -> str:
         """Convertir shortcode Instagram en media ID (algorithme exact)"""
         return self.url_resolver.shortcode_to_media_id(shortcode)
     
+    def username_to_user_id(self, username: str) -> str:
+        """Convertir username en user ID via API Instagram avec recherche similaire"""
+        return self.url_resolver._username_to_user_id_with_similarity(username, self)
+    
     def extract_media_id_from_url(self, url: str) -> str:
-        """Extraire media ID depuis URL Instagram (utilise URLResolver)"""
+        """Extraire media ID depuis URL Instagram avec support liens courts"""
         return self.url_resolver.extract_media_id_from_url(url)
     
     def extract_user_id_from_url(self, url: str) -> str:
-        """Extraire user ID depuis URL de profil - CORRIGÉ avec recherche similaire"""
-        try:
-            # D'abord résoudre les liens courts
-            resolved_url = self.url_resolver.resolve_short_url(url)
-            
-            # Extraire username depuis l'URL
-            match = re.search(r'instagram\.com/([^/?]+)', resolved_url)
-            if match:
-                username = match.group(1).replace('@', '').strip()
-                
-                # Utiliser la recherche similaire EXACTEMENT comme script original
-                user_id = self._search_similar_username(username)
-                return user_id
-            
-            return None
-            
-        except Exception as e:
-            return None
-    
-    def _search_similar_username(self, target_username: str) -> str:
-        """Rechercher username similaire EXACTEMENT comme script original"""
-        try:
-            headers = {
-                "user-agent": self.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "x-ig-android-id": self.device_info['android_id'],
-                "x-ig-device-id": self.device_info['device_uuid'],
-                "accept-language": "fr-FR, en-US",
-                "authorization": self.auth_token,
-            }
-            
-            search_params = {
-                "timezone_offset": "10800",
-                "q": target_username,
-                "count": "20"
-            }
-            
-            response = self.session.get(
-                "https://i.instagram.com/api/v1/users/search/",
-                params=search_params,
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                try:
-                    data = response.json()
-                    if data.get("status") == "ok" and "users" in data:
-                        users = data["users"]
-                        
-                        # Recherche exacte d'abord
-                        for user in users:
-                            username = user.get("username", "").lower()
-                            if username == target_username.lower():
-                                user_id = str(user.get("pk"))
-                                return user_id
-                        
-                        # Si pas trouvé exact, recherche similaire EXACTEMENT comme script original
-                        target_lower = target_username.lower()
-                        best_matches = []
-                        
-                        # Recherche par préfixe
-                        for user in users:
-                            username = user.get("username", "").lower()
-                            if username.startswith(target_lower) and username != target_lower:
-                                best_matches.append((user.get("pk"), username))
-                        
-                        if best_matches:
-                            best_matches.sort(key=lambda x: len(x[1]))
-                            user_id = str(best_matches[0][0])
-                            found_username = best_matches[0][1]
-                            return user_id
-                        
-                        # Recherche par parties de nom EXACTEMENT comme script original
-                        for user in users:
-                            username = user.get("username", "").lower()
-                            if any(part in username for part in target_lower.split('_') + target_lower.split('.') if len(part) > 2):
-                                user_id = str(user.get("pk"))
-                                found_username = user.get("username", "")
-                                return user_id
-                        
-                except Exception:
-                    pass
-            
-            # Si rien trouvé, utiliser fallback web
-            return self._username_to_user_id_web_fallback(target_username)
-            
-        except Exception:
-            return None
-    
-    def _username_to_user_id_web_fallback(self, username: str) -> str:
-        """Fallback web pour username -> user ID"""
-        try:
-            web_response = self.session.get(
-                f"https://www.instagram.com/{username}/",
-                headers={"user-agent": "Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36"},
-                timeout=10
-            )
-            
-            if web_response.status_code == 200:
-                content = InstagramEncryption.safe_decode_response(web_response)
-                
-                # Extraire user ID depuis le HTML
-                user_id_patterns = [
-                    r'"profilePage_([0-9]+)"',
-                    r'"user_id":"([0-9]+)"',
-                    r'"owner":{"id":"([0-9]+)"'
-                ]
-                
-                for pattern in user_id_patterns:
-                    match = re.search(pattern, content)
-                    if match:
-                        user_id = match.group(1)
-                        return user_id
-            
-            return None
-            
-        except Exception:
-            return None
+        """Extraire user ID depuis URL de profil avec support liens courts"""
+        return self.url_resolver.extract_user_id_from_url(url, self)
     
     def get_user_info(self, user_id: str) -> dict:
         """Récupérer informations d'un utilisateur"""
@@ -229,7 +120,6 @@ class InstagramAPI:
                             "comment_count": item.get("comment_count", 0)
                         }
                         
-                        # Caption
                         caption_info = item.get("caption")
                         if caption_info:
                             media_info["caption"] = caption_info.get("text", "")
@@ -251,11 +141,12 @@ class InstagramClient:
     def __init__(self, session_data: dict = None):
         # Validation licence obligatoire
         if not validate_license():
-            raise LicenseError("Ce script n'est pas autorisé à utiliser cette bibliothèque. Veuillez contacter le créateur via: 0389561802 ou https://t.me/Kenny5626")
+            raise LicenseError()
         
         self.auth = InstagramAuth()
         self.session_data = session_data or {}
-        self.api = None
+        self.url_resolver = URLResolver()
+        self.media_processor = MediaProcessor()
         
         if session_data:
             self.auth.session_data = session_data
@@ -270,42 +161,59 @@ class InstagramClient:
             user_id = user_data.get("user_id", "") or session_data.get("account_id", "")
             
             if user_id:
-                self.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token)
+                self.auth.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token, self.url_resolver)
     
     def login(self, username: str, password: str) -> dict:
         """Connexion Instagram avec gestion 2FA complète"""
-        return self.auth.login(username, password)
+        result = self.auth.login(username, password)
+        
+        if result["success"]:
+            # Initialiser l'API après connexion réussie
+            user_data = result.get("user_data", {})
+            session_data = result.get("session_data", {})
+            auth_token = session_data.get("authorization", "")
+            user_id = user_data.get("user_id", "")
+            
+            if user_id and auth_token:
+                self.auth.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token, self.url_resolver)
+                self.session_data = session_data
+        
+        return result
     
     def load_session(self, username: str) -> dict:
         """Charger session depuis le disque"""
         session_data = self.auth.load_session(username)
         if session_data:
             self.session_data = session_data
-            
             # Initialiser API avec session chargée
             user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
             auth_token = session_data.get("authorization_data", {}).get("authorization_header", "") or session_data.get("authorization", "")
             user_id = user_data.get("user_id", "") or session_data.get("account_id", "")
             
             if user_id:
-                self.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token)
+                self.auth.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token, self.url_resolver)
         
         return session_data
     
-    def dump_session(self, username: str = None) -> dict:
+    def dump_session(self, filename: str = None) -> bool:
         """Sauvegarder la session actuelle"""
-        if not username and self.session_data:
-            # Récupérer username depuis session_data
-            user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
-            username = user_data.get("username") or self.session_data.get("account_username")
-        
-        if username and self.session_data:
-            user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
-            # Utiliser _save_session_fixed de auth
-            self.auth._save_session_fixed(username, self.session_data, user_data)
-            return self.session_data
-        
-        return {}
+        try:
+            if not self.session_data:
+                return False
+            
+            if not filename:
+                username = self._get_username_from_session()
+                filename = f"sessions/{username}_ig_complete.json"
+            
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(self.session_data, f, indent=2, ensure_ascii=False)
+            
+            return True
+            
+        except Exception as e:
+            return False
     
     def get_x_mid(self) -> str:
         """Récupérer x-mid depuis le device manager"""
@@ -328,7 +236,7 @@ class InstagramClient:
         if account_username and account_username != "":
             return account_username
         
-        return "user_unknown"
+        return "user"
     
     def _get_user_id_from_session(self) -> str:
         """Récupérer user ID depuis la session"""
@@ -344,7 +252,7 @@ class InstagramClient:
         if user_id:
             return str(user_id)
         
-        return "user_id_unknown"
+        return ""
     
     def _get_auth_token(self) -> str:
         """Récupérer token d'autorisation"""
@@ -358,11 +266,21 @@ class InstagramClient:
         if auth_token and "Bearer" in auth_token:
             return auth_token
         
-        # Construire token basique si manquant
-        user_id = self._get_user_id_from_session()
-        sessionid = self.session_data.get("sessionid") or self.session_data.get("cookies", {}).get("sessionid")
+        # Construire depuis sessionid si disponible
+        sessionid = None
+        
+        if "sessionid" in self.session_data:
+            sessionid = self.session_data["sessionid"]
+        else:
+            cookies = self.session_data.get("cookies", {})
+            for key, value in cookies.items():
+                if "sessionid" in key.lower():
+                    sessionid = value
+                    break
         
         if sessionid:
+            user_id = self._get_user_id_from_session()
+            
             if '%3A' not in sessionid:
                 sessionid = urllib.parse.quote(sessionid)
             
@@ -377,11 +295,11 @@ class InstagramClient:
         return ""
     
     def handle_action_error(self, response_status: int, error_data: dict, response_text: str = "") -> dict:
-        """Gérer les erreurs d'action avec messages simplifiés (IDENTIQUE AU SCRIPT ORIGINAL)"""
+        """Gérer les erreurs d'action avec messages simplifiés"""
         try:
             username = self._get_username_from_session()
             
-            # 1. VÉRIFIER FEEDBACK_REQUIRED EN PREMIER
+            # Vérifier FEEDBACK_REQUIRED en premier
             if isinstance(error_data, dict) and error_data.get("message") == "feedback_required":
                 feedback_result = self.handle_feedback_required(error_data)
                 if feedback_result["type"] == "rate_limit":
@@ -394,25 +312,28 @@ class InstagramClient:
                     print(f"❌ {feedback_result['error']}")
                     return feedback_result
             
-            # 2. VÉRIFIER LOGIN_REQUIRED
+            # Vérifier LOGIN_REQUIRED
             if (isinstance(error_data, dict) and error_data.get("message") == "login_required") or \
                ("login_required" in response_text.lower()):
+                print(f"❌ Le compte @{username} est déconnecté, veuillez vous reconnecter")
                 return {
                     "success": False,
                     "error": f"Le compte @{username} est déconnecté, veuillez vous reconnecter"
                 }
             
-            # 3. VÉRIFIER SUSPENDED/DISABLED DANS LES CHALLENGES
+            # Vérifier SUSPENDED/DISABLED dans les challenges
             if isinstance(error_data, dict):
                 challenge_info = self.handle_challenge_response(response_text, error_data)
                 
                 if not challenge_info["show_details"]:
                     if challenge_info["type"] == "suspended":
+                        print(f"❌ Le compte @{username} est suspendu, veuillez le régler manuellement")
                         return {
                             "success": False,
                             "error": f"Le compte @{username} est suspendu, veuillez le régler manuellement"
                         }
                     elif challenge_info["type"] == "disabled":
+                        print(f"❌ Le compte @{username} est désactivé et ne peut plus être utilisé")
                         return {
                             "success": False,
                             "error": f"Le compte @{username} est désactivé et ne peut plus être utilisé"
@@ -424,58 +345,53 @@ class InstagramClient:
                             "challenge_data": challenge_info["challenge_data"]
                         }
             
-            # 4. VÉRIFIER ERREURS SPÉCIFIQUES CONNUES
+            # Vérifier erreurs spécifiques connues
             error_text = str(error_data).lower()
             
-            # Média supprimé
             if any(keyword in error_text for keyword in ["deleted", "supprime", "no longer available", "not found"]):
+                print("❌ Ce media a été supprimé")
                 return {"success": False, "error": "Ce media a été supprimé"}
             
-            # Utilisateur introuvable
             if any(keyword in error_text for keyword in ["user not found", "utilisateur introuvable"]):
+                print("❌ Utilisateur introuvable")
                 return {"success": False, "error": "Utilisateur introuvable"}
             
-            # 5. POUR TOUTES LES AUTRES ERREURS - AFFICHER DÉTAILS COMPLETS
+            # Autres erreurs - afficher détails complets
+            print(f"❌ Erreur détaillée: {error_data}")
             return {"success": False, "error": f"Erreur détaillée: {error_data}"}
             
         except Exception as e:
+            print(f"❌ Erreur inattendue: {str(e)}")
             return {"success": False, "error": f"Erreur inattendue: {str(e)}"}
     
-    def handle_feedback_required(self, error_data: dict) -> dict:
-        """NOUVEAU: Gérer spécifiquement les erreurs feedback_required"""
+    def handle_http_error(self, response_status: int, response_text: str) -> dict:
+        """Gérer les erreurs HTTP avec messages simplifiés"""
         try:
-            feedback_message = error_data.get("feedback_message", "").lower()
+            username = self._get_username_from_session()
             
-            # Cas 1: Rate limit - "Réessayer plus tard"
-            if "réessayer plus tard" in feedback_message or "limit" in feedback_message:
-                return {
-                    "success": False,
-                    "error": "Votre compte a atteint la limite de cette action, veuillez réessayer plus tard",
-                    "type": "rate_limit"
-                }
+            if response_status == 403:
+                if "login_required" in response_text.lower():
+                    print(f"❌ Le compte @{username} est déconnecté, veuillez vous reconnecter")
+                    return {
+                        "success": False,
+                        "error": f"Le compte @{username} est déconnecté, veuillez vous reconnecter"
+                    }
             
-            # Cas 2: Follow en attente - "Votre demande est en attente"
-            elif "demande est en attente" in feedback_message or "examiner manuellement" in feedback_message:
-                return {
-                    "success": True,  # Considéré comme succès car le follow est en attente
-                    "message": "Follow en attente de validation",
-                    "type": "pending_follow"
-                }
+            print(f"❌ Erreur HTTP {response_status}: {response_text}")
+            return {"success": False, "error": f"HTTP {response_status}: {response_text}"}
             
-            # Cas 3: Autres feedback_required - afficher erreur détaillée
-            else:
-                return {
-                    "success": False,
-                    "error": f"Erreur détaillée: {error_data}",
-                    "type": "other_feedback"
-                }
-                
-        except Exception:
-            return {
-                "success": False,
-                "error": f"Erreur détaillée: {error_data}",
-                "type": "other_feedback"
-            }
+        except Exception as e:
+            print(f"❌ Erreur HTTP inattendue: {str(e)}")
+            return {"success": False, "error": f"Erreur HTTP inattendue: {str(e)}"}
+    
+    def handle_media_error(self, error_message: str) -> dict:
+        """Gérer les erreurs spécifiques aux médias"""
+        if "deleted" in error_message.lower() or "supprime" in error_message.lower():
+            print("❌ Ce media a été supprimé")
+            return {"success": False, "error": "Ce media a été supprimé"}
+        else:
+            print(f"❌ {error_message}")
+            return {"success": False, "error": error_message}
     
     def handle_challenge_response(self, response_text: str, response_data: dict = None) -> dict:
         """Gérer les réponses de challenge/checkpoint intelligemment"""
@@ -491,7 +407,6 @@ class InstagramClient:
             
             url_to_check = challenge_url or checkpoint_url
             
-            # VÉRIFIER SUSPENDED/DISABLED DANS L'URL
             if "/accounts/suspended/" in url_to_check:
                 return {"type": "suspended", "show_details": False}
             elif "/accounts/disabled/" in url_to_check:
@@ -506,8 +421,41 @@ class InstagramClient:
         except Exception:
             return {"type": "other", "show_details": True}
     
+    def handle_feedback_required(self, error_data: dict) -> dict:
+        """Gérer spécifiquement les erreurs feedback_required"""
+        try:
+            feedback_message = error_data.get("feedback_message", "").lower()
+            
+            if "réessayer plus tard" in feedback_message or "limit" in feedback_message:
+                return {
+                    "success": False,
+                    "error": "Votre compte a atteint la limite de cette action, veuillez réessayer plus tard",
+                    "type": "rate_limit"
+                }
+            
+            elif "demande est en attente" in feedback_message or "examiner manuellement" in feedback_message:
+                return {
+                    "success": True,
+                    "message": "Follow en attente de validation",
+                    "type": "pending_follow"
+                }
+            
+            else:
+                return {
+                    "success": False,
+                    "error": f"Erreur détaillée: {error_data}",
+                    "type": "other_feedback"
+                }
+                
+        except Exception:
+            return {
+                "success": False,
+                "error": f"Erreur détaillée: {error_data}",
+                "type": "other_feedback"
+            }
+    
     def solve_general_challenge(self, challenge_data: dict) -> bool:
-        """Tenter de résoudre un challenge général automatiquement (SILENCIEUX)"""
+        """Tenter de résoudre un challenge général automatiquement"""
         try:
             challenge = challenge_data.get("challenge", {})
             challenge_url = challenge.get("url", "")
@@ -555,7 +503,7 @@ class InstagramClient:
             return False
     
     def _execute_action_with_retry(self, action_type: str, *args, max_retries: int = 1) -> dict:
-        """Exécuter une action avec retry automatique en cas de challenge général (SILENCIEUX)"""
+        """Exécuter une action avec retry automatique en cas de challenge général"""
         for attempt in range(max_retries + 1):
             
             # Exécuter l'action selon le type
@@ -582,17 +530,19 @@ class InstagramClient:
             if "challenge_data" in result and attempt < max_retries:
                 challenge_data = result["challenge_data"]
                 
-                # Tenter de résoudre le challenge (SILENCIEUX)
+                # Tenter de résoudre le challenge
                 if self.solve_general_challenge(challenge_data):
                     time.sleep(5)
                     continue
                 else:
                     username = self._get_username_from_session()
+                    print(f"❌ Captcha détecté pour @{username}, veuillez le régler manuellement")
                     return {"success": False, "error": f"Captcha détecté pour @{username}, veuillez le régler manuellement"}
             
             # Si c'est la deuxième tentative ET qu'il y a encore un challenge
             if attempt == max_retries and "challenge_data" in result:
                 username = self._get_username_from_session()
+                print(f"❌ Captcha détecté pour @{username}, veuillez le régler manuellement")
                 return {"success": False, "error": f"Captcha détecté pour @{username}, veuillez le régler manuellement"}
             
             # Si ce n'est pas un challenge mais une autre erreur, retourner l'erreur
@@ -628,13 +578,12 @@ class InstagramClient:
         """Supprimer la dernière publication avec retry automatique"""
         return self._execute_action_with_retry("delete_post")
     
-    # MÉTHODES INTERNES (appelées par _execute_action_with_retry)
+    # MÉTHODES INTERNES
     def _like_post_internal(self, media_input: str) -> dict:
-        """Liker un post Instagram (méthode interne) - AVEC DÉCODAGE UNIFIÉ"""
+        """Liker un post Instagram (méthode interne)"""
         try:
-            # Utiliser l'API pour extraire media ID (SILENCIEUX)
-            if self.api:
-                media_id = self.api.extract_media_id_from_url(media_input)
+            if self.auth.api:
+                media_id = self.auth.api.extract_media_id_from_url(media_input)
             else:
                 media_id = self._extract_media_id_basic(media_input)
             
@@ -645,7 +594,6 @@ class InstagramClient:
             if not user_id:
                 return {"success": False, "error": "User ID non trouvé dans la session"}
             
-            # Préparer données exactement comme script original
             like_data = {
                 "is_2m_enabled": "false",
                 "delivery_class": "organic", 
@@ -685,6 +633,7 @@ class InstagramClient:
                 parsed_data = InstagramEncryption.safe_parse_json(response)
                 
                 if InstagramEncryption.is_success_response(response, parsed_data):
+                    print("✅ Like réussi")
                     return {"success": True, "data": parsed_data}
                 else:
                     return self.handle_action_error(response.status_code, parsed_data, 
@@ -699,13 +648,14 @@ class InstagramClient:
                                             InstagramEncryption.safe_decode_response(response))
                 
         except Exception as e:
+            print("❌ Ce media a ete supprime")
             return {"success": False, "error": "Ce media a ete supprime"}
     
     def _comment_post_internal(self, media_input: str, comment_text: str) -> dict:
-        """Commenter un post Instagram (méthode interne) - AVEC DÉCODAGE UNIFIÉ"""
+        """Commenter un post Instagram (méthode interne)"""
         try:
-            if self.api:
-                media_id = self.api.extract_media_id_from_url(media_input)
+            if self.auth.api:
+                media_id = self.auth.api.extract_media_id_from_url(media_input)
             else:
                 media_id = self._extract_media_id_basic(media_input)
             
@@ -727,7 +677,6 @@ class InstagramClient:
                 if web_response.status_code == 200:
                     web_content = InstagramEncryption.safe_decode_response(web_response)
                     
-                    # Extraire le csrf_token
                     csrf_match = re.search(r'"csrf_token":"([^"]+)"', web_content)
                     if csrf_match:
                         csrf_token = csrf_match.group(1)
@@ -766,6 +715,7 @@ class InstagramClient:
                             parsed_data = InstagramEncryption.safe_parse_json(response)
                             
                             if InstagramEncryption.is_success_response(response, parsed_data):
+                                print("✅ Commentaire réussi")
                                 return {"success": True, "data": parsed_data}
                             else:
                                 return self.handle_action_error(response.status_code, parsed_data, 
@@ -779,8 +729,10 @@ class InstagramClient:
                             return self.handle_http_error(response.status_code, 
                                                         InstagramEncryption.safe_decode_response(response))
                     else:
+                        print("❌ Ce média a été supprimé")
                         return {"success": False, "error": "Ce média a été supprimé"}
                 else:
+                    print("❌ Ce media a ete supprime")
                     return {"success": False, "error": "Ce media a ete supprime"}
             except Exception as web_error:
                 return self.handle_media_error("Ce média a été supprimé")
@@ -789,31 +741,27 @@ class InstagramClient:
             return self.handle_media_error("Ce media a ete supprime")
     
     def _follow_user_internal(self, user_input: str) -> dict:
-        """Suivre un utilisateur (méthode interne) - CORRIGÉE avec recherche similaire exacte"""
+        """Suivre un utilisateur (méthode interne)"""
         try:
-            if self.api:
-                user_id = self.api.extract_user_id_from_url(user_input)
+            if self.auth.api:
+                user_id = self.auth.api.extract_user_id_from_url(user_input)
             else:
                 user_id = self._extract_user_id_basic(user_input)
             
-            # Si échec d'extraction, chercher username similaire EXACTEMENT comme script original
             if not user_id:
-                # Extraire username depuis l'URL
                 username_match = re.search(r'instagram\.com/([^/?]+)', user_input)
                 if username_match:
                     target_username = username_match.group(1).replace('@', '').strip()
-                    
-                    # Recherche silencieuse d'utilisateurs similaires EXACTEMENT comme script original
                     user_id = self._search_similar_username(target_username)
                 
                 if not user_id:
+                    print("❌ Utilisateur introuvable")
                     return {"success": False, "error": "Utilisateur introuvable"}
             
             current_user_id = self._get_user_id_from_session()
             if not current_user_id:
                 return {"success": False, "error": "User ID non trouvé dans la session"}
             
-            # DONNÉES SIMPLES COMME SCRIPT ORIGINAL (qui marchaient)
             follow_data = {
                 "inventory_source": "media_or_ad",
                 "include_follow_friction_check": "1",
@@ -828,7 +776,6 @@ class InstagramClient:
             
             signed_body = InstagramEncryption.create_signed_body(follow_data)
             
-            # HEADERS SIMPLES COMME SCRIPT ORIGINAL (qui marchaient)
             headers = {
                 "accept-language": "fr-FR, en-US",
                 "authorization": self._get_auth_token(),
@@ -847,10 +794,10 @@ class InstagramClient:
             )
             
             if response.status_code == 200:
-                # UTILISER LE DÉCODAGE UNIFIÉ
                 parsed_data = InstagramEncryption.safe_parse_json(response)
                 
                 if InstagramEncryption.is_success_response(response, parsed_data):
+                    print("✅ Follow réussi")
                     return {"success": True, "data": parsed_data}
                 else:
                     return self.handle_action_error(response.status_code, parsed_data, 
@@ -867,10 +814,167 @@ class InstagramClient:
         except Exception as e:
             return self.handle_media_error("Utilisateur introuvable")
     
-    def _search_similar_username(self, target_username: str) -> str:
-        """Rechercher username similaire EXACTEMENT comme script original"""
+    def _upload_story_internal(self, image_path: str) -> dict:
+        """Publier une story Instagram (méthode interne)"""
         try:
-            if not self.api:
+            print(f"📷 Upload story: {image_path}")
+            
+            if not os.path.exists(image_path):
+                return {"success": False, "error": f"Image non trouvée: {image_path}"}
+            
+            image_data, image_size, error = self.media_processor.prepare_image_for_instagram(image_path, story_mode=True)
+            if error:
+                return {"success": False, "error": error}
+            
+            upload_id = self.media_processor.generate_upload_id()
+            user_id = self._get_user_id_from_session()
+            
+            if not user_id:
+                return {"success": False, "error": "User ID non trouvé"}
+            
+            upload_result = self._upload_image_data(image_data, upload_id, story_mode=True)
+            if not upload_result["success"]:
+                if "challenge_data" in upload_result:
+                    return upload_result
+                
+                error_msg = upload_result.get("error", "")
+                if "suspended" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"⚠️ Le compte @{username} est suspendu, veuillez le réactiver manuellement"}
+                elif "disabled" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"❌ Le compte @{username} est désactivé et ne peut plus être utilisé"}
+                elif "login_required" in error_msg.lower() or "déconnecté" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"❌ Le compte @{username} est déconnecté, veuillez vous reconnecter"}
+                
+                return upload_result
+            
+            story_result = self._configure_story(upload_id, image_size, user_id)
+            if not story_result["success"]:
+                if "challenge_data" in story_result:
+                    return story_result
+                
+                error_msg = story_result.get("error", "")
+                if "suspended" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"⚠️ Le compte @{username} est suspendu, veuillez le réactiver manuellement"}
+                elif "disabled" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"❌ Le compte @{username} est désactivé et ne peut plus être utilisé"}
+                elif "login_required" in error_msg.lower() or "déconnecté" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"❌ Le compte @{username} est déconnecté, veuillez vous reconnecter"}
+            
+            return story_result
+            
+        except Exception as e:
+            return {"success": False, "error": f"Erreur upload story: {str(e)}"}
+    
+    def _upload_post_internal(self, image_path: str, caption: str = "") -> dict:
+        """Publier un post Instagram (méthode interne)"""
+        try:
+            print(f"📷 Upload post: {image_path}")
+            
+            if not os.path.exists(image_path):
+                return {"success": False, "error": f"Image non trouvée: {image_path}"}
+            
+            image_data, image_size, error = self.media_processor.prepare_image_for_instagram(image_path, story_mode=False)
+            if error:
+                return {"success": False, "error": error}
+            
+            upload_id = self.media_processor.generate_upload_id()
+            user_id = self._get_user_id_from_session()
+            
+            if not user_id:
+                return {"success": False, "error": "User ID non trouvé"}
+            
+            upload_result = self._upload_image_data(image_data, upload_id, story_mode=False)
+            if not upload_result["success"]:
+                if "challenge_data" in upload_result:
+                    return upload_result
+                
+                error_msg = upload_result.get("error", "")
+                if "suspended" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"⚠️ Le compte @{username} est suspendu, veuillez le réactiver manuellement"}
+                elif "disabled" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"❌ Le compte @{username} est désactivé et ne peut plus être utilisé"}
+                elif "login_required" in error_msg.lower() or "déconnecté" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"❌ Le compte @{username} est déconnecté, veuillez vous reconnecter"}
+                
+                return upload_result
+            
+            post_result = self._configure_post(upload_id, image_size, user_id, caption)
+            if not post_result["success"]:
+                if "challenge_data" in post_result:
+                    return post_result
+                
+                error_msg = post_result.get("error", "")
+                if "suspended" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"⚠️ Le compte @{username} est suspendu, veuillez le réactiver manuellement"}
+                elif "disabled" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"❌ Le compte @{username} est désactivé et ne peut plus être utilisé"}
+                elif "login_required" in error_msg.lower() or "déconnecté" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"❌ Le compte @{username} est déconnecté, veuillez vous reconnecter"}
+                
+                return post_result
+            
+            pdq_result = self._update_media_pdq_hash(upload_id, image_data, user_id)
+            
+            return post_result
+            
+        except Exception as e:
+            return {"success": False, "error": f"Erreur upload post: {str(e)}"}
+    
+    def _delete_last_post_internal(self) -> dict:
+        """Supprimer la dernière publication (méthode interne)"""
+        try:
+            print("🗑️ Suppression dernière publication...")
+            
+            if not self.auth.api:
+                return {"success": False, "error": "API non initialisée"}
+            
+            media_list = self.auth.api.get_own_media_list(count=1)
+            
+            if not media_list:
+                return {"success": False, "error": "Aucune publication trouvée"}
+            
+            latest_media = media_list[0]
+            media_id = latest_media["id"]
+            
+            print(f"📷 Suppression media ID: {media_id}")
+            
+            delete_result = self._delete_media(media_id)
+            if not delete_result["success"]:
+                if "challenge_data" in delete_result:
+                    return delete_result
+                
+                error_msg = delete_result.get("error", "")
+                if "suspended" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"⚠️ Le compte @{username} est suspendu, veuillez le réactiver manuellement"}
+                elif "disabled" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"❌ Le compte @{username} est désactivé et ne peut plus être utilisé"}
+                elif "login_required" in error_msg.lower() or "déconnecté" in error_msg.lower():
+                    username = self._get_username_from_session()
+                    return {"success": False, "error": f"❌ Le compte @{username} est déconnecté, veuillez vous reconnecter"}
+            
+            return delete_result
+            
+        except Exception as e:
+            return {"success": False, "error": f"Erreur suppression: {str(e)}"}
+    
+    def _search_similar_username(self, target_username: str) -> str:
+        """Rechercher username similaire silencieusement"""
+        try:
+            if not self.auth.api:
                 return None
             
             headers = {
@@ -901,17 +1005,14 @@ class InstagramClient:
                     if data.get("status") == "ok" and "users" in data:
                         users = data["users"]
                         
-                        # Recherche exacte d'abord
                         for user in users:
                             username = user.get("username", "").lower()
                             if username == target_username.lower():
                                 return str(user.get("pk"))
                         
-                        # Si pas trouvé exact, recherche similaire EXACTEMENT comme script original
                         target_lower = target_username.lower()
                         best_matches = []
                         
-                        # Recherche par préfixe
                         for user in users:
                             username = user.get("username", "").lower()
                             if username.startswith(target_lower) and username != target_lower:
@@ -921,10 +1022,9 @@ class InstagramClient:
                             best_matches.sort(key=lambda x: len(x[1]))
                             return str(best_matches[0][0])
                         
-                        # Recherche par parties de nom EXACTEMENT comme script original
                         for user in users:
                             username = user.get("username", "").lower()
-                            if any(part in username for part in target_lower.split('_') + target_lower.split('.') if len(part) > 2):
+                            if any(part in username for part in target_lower.split('_') + target_lower.split('.')):
                                 return str(user.get("pk"))
                         
                 except Exception:
@@ -934,110 +1034,6 @@ class InstagramClient:
             
         except Exception:
             return None
-    
-    def _upload_story_internal(self, image_path: str) -> dict:
-        """Publier une story Instagram (méthode interne)"""
-        try:
-            if not os.path.exists(image_path):
-                return {"success": False, "error": f"Image non trouvée: {image_path}"}
-            
-            image_data, image_size, error = MediaProcessor.prepare_image_for_instagram(image_path, story_mode=True)
-            if error:
-                return {"success": False, "error": error}
-            
-            upload_id = MediaProcessor.generate_upload_id()
-            user_id = self._get_user_id_from_session()
-            
-            if not user_id:
-                return {"success": False, "error": "User ID non trouvé"}
-            
-            upload_result = self._upload_image_data(image_data, upload_id, story_mode=True)
-            if not upload_result["success"]:
-                return upload_result
-            
-            story_result = self._configure_story(upload_id, image_size, user_id)
-            return story_result
-            
-        except Exception as e:
-            return {"success": False, "error": f"Erreur upload story: {str(e)}"}
-    
-    def _upload_post_internal(self, image_path: str, caption: str = "") -> dict:
-        """Publier un post Instagram (méthode interne)"""
-        try:
-            if not os.path.exists(image_path):
-                return {"success": False, "error": f"Image non trouvée: {image_path}"}
-            
-            image_data, image_size, error = MediaProcessor.prepare_image_for_instagram(image_path, story_mode=False)
-            if error:
-                return {"success": False, "error": error}
-            
-            upload_id = MediaProcessor.generate_upload_id()
-            user_id = self._get_user_id_from_session()
-            
-            if not user_id:
-                return {"success": False, "error": "User ID non trouvé"}
-            
-            upload_result = self._upload_image_data(image_data, upload_id, story_mode=False)
-            if not upload_result["success"]:
-                return upload_result
-            
-            post_result = self._configure_post(upload_id, image_size, user_id, caption)
-            if post_result["success"]:
-                # Mettre à jour PDQ hash
-                self._update_media_pdq_hash(upload_id, image_data, user_id)
-            
-            return post_result
-            
-        except Exception as e:
-            return {"success": False, "error": f"Erreur upload post: {str(e)}"}
-    
-    def _delete_last_post_internal(self) -> dict:
-        """Supprimer la dernière publication (méthode interne)"""
-        try:
-            
-            if not self.api:
-                return {"success": False, "error": "API non initialisée"}
-            
-            media_list = self.api.get_own_media_list(count=1)
-            
-            if not media_list:
-                return {"success": False, "error": "Aucune publication trouvée"}
-            
-            latest_media = media_list[0]
-            media_id = latest_media["id"]
-            
-            return self._delete_media(media_id)
-            
-        except Exception as e:
-            return {"success": False, "error": f"Erreur suppression: {str(e)}"}
-    
-    # MÉTHODES UTILITAIRES INTERNES
-    def handle_http_error(self, response_status: int, response_text: str) -> dict:
-        """Gérer les erreurs HTTP avec messages simplifiés"""
-        try:
-            username = self._get_username_from_session()
-            
-            if response_status == 403:
-                if "login_required" in response_text.lower():
-                    return {
-                        "success": False,
-                        "error": f"Le compte @{username} est déconnecté, veuillez vous reconnecter"
-                    }
-            
-            print(f"❌ Erreur HTTP {response_status}: {response_text}")
-            return {"success": False, "error": f"HTTP {response_status}: {response_text}"}
-            
-        except Exception as e:
-            print(f"❌ Erreur HTTP inattendue: {str(e)}")
-            return {"success": False, "error": f"Erreur HTTP inattendue: {str(e)}"}
-    
-    def handle_media_error(self, error_message: str) -> dict:
-        """Gérer les erreurs spécifiques aux médias"""
-        if "deleted" in error_message.lower() or "supprime" in error_message.lower():
-            return {"success": False, "error": "Ce media a été supprimé"}
-        else:
-            print(f"❌ {error_message}")
-            return {"success": False, "error": error_message}
     
     def _extract_media_id_basic(self, url: str) -> str:
         """Extraction basique media ID (fallback)"""
@@ -1069,10 +1065,10 @@ class InstagramClient:
         """Récupérer informations du compte connecté"""
         try:
             user_id = self._get_user_id_from_session()
-            if not user_id or not self.api:
+            if not user_id or not self.auth.api:
                 return {"success": False, "error": "Compte non connecté"}
             
-            user_info = self.api.get_user_info(user_id)
+            user_info = self.auth.api.get_user_info(user_id)
             
             if user_info:
                 account_status = "Privé" if user_info.get("is_private") else "Public"
@@ -1143,6 +1139,7 @@ class InstagramClient:
                 
                 if InstagramEncryption.is_success_response(response, parsed_data):
                     new_status = "Public" if action == "set_public" else "Privé"
+                    print(f"✅ Compte maintenant: {new_status}")
                     return {"success": True, "data": {"new_status": new_status}}
                 else:
                     print(f"❌ Erreur changement privacy: {parsed_data}")
@@ -1159,7 +1156,6 @@ class InstagramClient:
         except Exception as e:
             return {"success": False, "error": f"Erreur: {str(e)}"}
     
-    # MÉTHODES D'UPLOAD ET CONFIGURATION
     def _upload_image_data(self, image_data: bytes, upload_id: str, story_mode: bool = False) -> dict:
         """Upload des données d'image vers Instagram"""
         try:
@@ -1204,6 +1200,7 @@ class InstagramClient:
             )
             
             if response.status_code == 200:
+                print("✅ Image uploadée avec succès")
                 return {"success": True, "data": "Upload réussi"}
             else:
                 if response.status_code == 400:
@@ -1295,6 +1292,7 @@ class InstagramClient:
                 parsed_data = InstagramEncryption.safe_parse_json(response)
                 
                 if InstagramEncryption.is_success_response(response, parsed_data):
+                    print("✅ Story publiée avec succès")
                     return {"success": True, "data": parsed_data}
                 else:
                     print(f"❌ Erreur configuration story: {parsed_data}")
@@ -1331,7 +1329,7 @@ class InstagramClient:
                 "_uuid": self.auth.device_manager.device_info['device_uuid'],
                 "creation_tool_info": "[]",
                 "creation_logger_session_id": str(uuid.uuid4()),
-                "nav_chain": f"MainFeedFragment:feed_timeline:1:cold_start:{int(time.time() * 1000)}:::,GalleryPickerFragment:gallery_picker:50:camera_tab_bar:{int(time.time() * 1000)}:::,PhotoFilterFragment:photo_filter:51:button:{int(time.time() * 1000)}::",
+                "nav_chain": f"MainFeedFragment:feed_timeline:1:cold_start:{int(time.time() * 1000)}:::,GalleryPickerFragment:gallery_picker:50:camera_tab_bar:{int(time.time() * 1000)}:::,PhotoFilterFragment:photo_filter:51:button:{int(time.time() * 1000)}:::",
                 "caption": caption,
                 "audience": "default",
                 "upload_id": upload_id,
@@ -1381,6 +1379,7 @@ class InstagramClient:
                 parsed_data = InstagramEncryption.safe_parse_json(response)
                 
                 if InstagramEncryption.is_success_response(response, parsed_data):
+                    print("✅ Post publié avec succès")
                     return {"success": True, "data": parsed_data}
                 else:
                     print(f"❌ Erreur configuration post: {parsed_data}")
@@ -1400,7 +1399,7 @@ class InstagramClient:
     def _update_media_pdq_hash(self, upload_id: str, image_data: bytes, user_id: str) -> dict:
         """Mettre à jour le média avec le hash PDQ"""
         try:
-            pdq_hash = MediaProcessor.generate_pdq_hash(image_data)
+            pdq_hash = self.media_processor.generate_pdq_hash(image_data)
             
             pdq_data = {
                 "pdq_hash_info": f'[{{"pdq_hash":"{pdq_hash}","frame_time":0}}]',
@@ -1429,6 +1428,7 @@ class InstagramClient:
             )
             
             if response.status_code == 200:
+                print("✅ Hash PDQ mis à jour")
                 return {"success": True}
             else:
                 print(f"⚠️ Erreur PDQ hash: {response.status_code}")
@@ -1439,7 +1439,7 @@ class InstagramClient:
             return {"success": False, "error": f"PDQ hash error: {str(e)}"}
     
     def _delete_media(self, media_id: str) -> dict:
-        """Supprimer un média par son ID - AVEC DÉCODAGE UNIFIÉ"""
+        """Supprimer un média par son ID"""
         try:
             user_id = self._get_user_id_from_session()
             
@@ -1476,6 +1476,7 @@ class InstagramClient:
                 if (isinstance(parsed_data, dict) and 
                     (parsed_data.get("did_delete") == True or 
                      InstagramEncryption.is_success_response(response, parsed_data))):
+                    print("✅ Publication supprimée avec succès")
                     return {"success": True, "data": parsed_data}
                 else:
                     print(f"❌ Erreur suppression: {parsed_data}")
@@ -1491,13 +1492,13 @@ class InstagramClient:
                 
         except Exception as e:
             return {"success": False, "error": f"Erreur suppression: {str(e)}"}
-    
-    # MÉTHODES SUPPLÉMENTAIRES POUR COMPATIBILITÉ COMPLÈTE
+
+    # MÉTHODES ADDITIONNELLES POUR COMPATIBILITÉ COMPLÈTE
     def get_media_info(self, media_input: str) -> dict:
         """Récupérer informations d'un média"""
         try:
-            if self.api:
-                media_id = self.api.extract_media_id_from_url(media_input)
+            if self.auth.api:
+                media_id = self.auth.api.extract_media_id_from_url(media_input)
             else:
                 media_id = self._extract_media_id_basic(media_input)
             
@@ -1520,38 +1521,21 @@ class InstagramClient:
             
             if response.status_code == 200:
                 parsed_data = InstagramEncryption.safe_parse_json(response)
-                
                 if InstagramEncryption.is_success_response(response, parsed_data):
-                    items = parsed_data.get("items", [])
-                    if items:
-                        media = items[0]
-                        return {
-                            "success": True,
-                            "data": {
-                                "id": media.get("id"),
-                                "code": media.get("code"),
-                                "media_type": media.get("media_type"),
-                                "like_count": media.get("like_count", 0),
-                                "comment_count": media.get("comment_count", 0),
-                                "caption": media.get("caption", {}).get("text", "") if media.get("caption") else "",
-                                "owner": media.get("user", {})
-                            }
-                        }
+                    return {"success": True, "data": parsed_data}
                 else:
-                    return self.handle_action_error(response.status_code, parsed_data,
-                                                 InstagramEncryption.safe_decode_response(response))
+                    return {"success": False, "error": "Média non accessible"}
             else:
-                return self.handle_http_error(response.status_code, 
-                                            InstagramEncryption.safe_decode_response(response))
+                return {"success": False, "error": f"HTTP {response.status_code}"}
                 
         except Exception as e:
             return {"success": False, "error": f"Erreur: {str(e)}"}
-    
-    def get_user_media_list(self, user_input: str, count: int = 20) -> dict:
-        """Récupérer la liste des médias d'un utilisateur"""
+
+    def get_user_media(self, user_input: str, count: int = 12) -> dict:
+        """Récupérer les médias d'un utilisateur"""
         try:
-            if self.api:
-                user_id = self.api.extract_user_id_from_url(user_input)
+            if self.auth.api:
+                user_id = self.auth.api.extract_user_id_from_url(user_input)
             else:
                 user_id = self._extract_user_id_basic(user_input)
             
@@ -1580,163 +1564,32 @@ class InstagramClient:
             
             if response.status_code == 200:
                 parsed_data = InstagramEncryption.safe_parse_json(response)
-                
-                if InstagramEncryption.is_success_response(response, parsed_data):
-                    items = parsed_data.get("items", [])
-                    media_list = []
-                    
-                    for item in items:
-                        media_info = {
-                            "id": item.get("id"),
-                            "code": item.get("code"),
-                            "media_type": item.get("media_type"),
-                            "taken_at": item.get("taken_at"),
-                            "like_count": item.get("like_count", 0),
-                            "comment_count": item.get("comment_count", 0)
-                        }
-                        
-                        caption_info = item.get("caption")
-                        if caption_info:
-                            media_info["caption"] = caption_info.get("text", "")
-                        else:
-                            media_info["caption"] = ""
-                        
-                        media_list.append(media_info)
-                    
-                    return {"success": True, "data": media_list}
-                else:
-                    return self.handle_action_error(response.status_code, parsed_data,
-                                                 InstagramEncryption.safe_decode_response(response))
-            else:
-                return self.handle_http_error(response.status_code, 
-                                            InstagramEncryption.safe_decode_response(response))
-                
-        except Exception as e:
-            return {"success": False, "error": f"Erreur: {str(e)}"}
-    
-    def get_user_info(self, user_input: str) -> dict:
-        """Récupérer informations d'un utilisateur"""
-        try:
-            if self.api:
-                user_id = self.api.extract_user_id_from_url(user_input)
-            else:
-                user_id = self._extract_user_id_basic(user_input)
-            
-            if not user_id:
-                return {"success": False, "error": "User ID non trouvé"}
-            
-            if self.api:
-                user_info = self.api.get_user_info(user_id)
-                
-                if user_info:
-                    account_status = "Privé" if user_info.get("is_private") else "Public"
-                    
-                    info = {
-                        "success": True,
-                        "data": {
-                            "user_id": str(user_info.get("pk", user_id)),
-                            "username": user_info.get("username", ""),
-                            "full_name": user_info.get("full_name", ""),
-                            "is_private": user_info.get("is_private", False),
-                            "account_status": account_status,
-                            "is_verified": user_info.get("is_verified", False),
-                            "is_business": user_info.get("is_business", False),
-                            "follower_count": user_info.get("follower_count", 0),
-                            "following_count": user_info.get("following_count", 0),
-                            "media_count": user_info.get("media_count", 0),
-                            "biography": user_info.get("biography", ""),
-                            "profile_pic_url": user_info.get("profile_pic_url", "")
-                        }
-                    }
-                    
-                    return info
-                else:
-                    return {"success": False, "error": "Impossible de récupérer les informations"}
-            else:
-                return {"success": False, "error": "API non initialisée"}
-                
-        except Exception as e:
-            return {"success": False, "error": f"Erreur: {str(e)}"}
-    
-    def unlike_post(self, media_input: str) -> dict:
-        """Unliker un post Instagram"""
-        try:
-            if self.api:
-                media_id = self.api.extract_media_id_from_url(media_input)
-            else:
-                media_id = self._extract_media_id_basic(media_input)
-            
-            if not media_id:
-                return {"success": False, "error": "Ce media a ete supprime"}
-            
-            user_id = self._get_user_id_from_session()
-            if not user_id:
-                return {"success": False, "error": "User ID non trouvé dans la session"}
-            
-            unlike_data = {
-                "media_id": media_id,
-                "radio_type": "wifi-none",
-                "_uid": user_id,
-                "_uuid": self.auth.device_manager.device_info['device_uuid'],
-                "nav_chain": f"MainFeedFragment:feed_timeline:1:cold_start:{int(time.time() * 1000)}:::{int(time.time() * 1000)}",
-                "container_module": "feed_timeline"
-            }
-            
-            signed_body = InstagramEncryption.create_signed_body(unlike_data)
-            
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": f"IgApi: media/{media_id}/unlike/",
-            }
-            
-            response = self.auth.session.post(
-                f"https://i.instagram.com/api/v1/media/{media_id}/unlike/",
-                headers=headers,
-                data={"signed_body": signed_body, "d": "0"},
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                parsed_data = InstagramEncryption.safe_parse_json(response)
-                
                 if InstagramEncryption.is_success_response(response, parsed_data):
                     return {"success": True, "data": parsed_data}
                 else:
-                    return self.handle_action_error(response.status_code, parsed_data,
-                                                 InstagramEncryption.safe_decode_response(response))
+                    return {"success": False, "error": "Médias non accessibles"}
             else:
-                if response.status_code == 400:
-                    parsed_data = InstagramEncryption.safe_parse_json(response)
-                    return self.handle_action_error(response.status_code, parsed_data,
-                                                 InstagramEncryption.safe_decode_response(response))
-                
-                return self.handle_http_error(response.status_code, 
-                                            InstagramEncryption.safe_decode_response(response))
+                return {"success": False, "error": f"HTTP {response.status_code}"}
                 
         except Exception as e:
-            return {"success": False, "error": "Ce media a ete supprime"}
-    
+            return {"success": False, "error": f"Erreur: {str(e)}"}
+
     def unfollow_user(self, user_input: str) -> dict:
         """Ne plus suivre un utilisateur"""
         try:
-            if self.api:
-                user_id = self.api.extract_user_id_from_url(user_input)
+            if self.auth.api:
+                user_id = self.auth.api.extract_user_id_from_url(user_input)
             else:
                 user_id = self._extract_user_id_basic(user_input)
             
-            # Si échec d'extraction, chercher username similaire via API
-            if not user_id and self.api:
+            if not user_id:
                 username_match = re.search(r'instagram\.com/([^/?]+)', user_input)
                 if username_match:
                     target_username = username_match.group(1).replace('@', '').strip()
-                    user_id = self.api.username_to_user_id(target_username)
+                    user_id = self._search_similar_username(target_username)
                 
                 if not user_id:
+                    print("❌ Utilisateur introuvable")
                     return {"success": False, "error": "Utilisateur introuvable"}
             
             current_user_id = self._get_user_id_from_session()
@@ -1749,7 +1602,6 @@ class InstagramClient:
                 "_uid": current_user_id,
                 "device_id": self.auth.device_manager.device_info['android_id'],
                 "_uuid": self.auth.device_manager.device_info['device_uuid'],
-                "nav_chain": f"UserDetailFragment:profile:1:button:{int(time.time() * 1000)}:::{int(time.time() * 1000)}",
                 "container_module": "profile"
             }
             
@@ -1776,44 +1628,47 @@ class InstagramClient:
                 parsed_data = InstagramEncryption.safe_parse_json(response)
                 
                 if InstagramEncryption.is_success_response(response, parsed_data):
+                    print("✅ Unfollow réussi")
                     return {"success": True, "data": parsed_data}
                 else:
-                    return self.handle_action_error(response.status_code, parsed_data,
+                    return self.handle_action_error(response.status_code, parsed_data, 
                                                  InstagramEncryption.safe_decode_response(response))
             else:
                 if response.status_code == 400:
                     parsed_data = InstagramEncryption.safe_parse_json(response)
-                    return self.handle_action_error(response.status_code, parsed_data,
+                    return self.handle_action_error(response.status_code, parsed_data, 
                                                  InstagramEncryption.safe_decode_response(response))
                 
                 return self.handle_http_error(response.status_code, 
                                             InstagramEncryption.safe_decode_response(response))
                 
         except Exception as e:
-            return {"success": False, "error": "Utilisateur introuvable"}
-    
-    def delete_comment(self, media_input: str, comment_id: str) -> dict:
-        """Supprimer un commentaire"""
+            return {"success": False, "error": f"Erreur unfollow: {str(e)}"}
+
+    def unlike_post(self, media_input: str) -> dict:
+        """Retirer le like d'un post"""
         try:
-            if self.api:
-                media_id = self.api.extract_media_id_from_url(media_input)
+            if self.auth.api:
+                media_id = self.auth.api.extract_media_id_from_url(media_input)
             else:
                 media_id = self._extract_media_id_basic(media_input)
             
             if not media_id:
-                return {"success": False, "error": "Ce média a été supprimé"}
+                return {"success": False, "error": "Ce media a ete supprime"}
             
             user_id = self._get_user_id_from_session()
             if not user_id:
                 return {"success": False, "error": "User ID non trouvé dans la session"}
             
-            delete_comment_data = {
+            unlike_data = {
+                "media_id": media_id,
+                "radio_type": "wifi-none",
                 "_uid": user_id,
                 "_uuid": self.auth.device_manager.device_info['device_uuid'],
-                "nav_chain": f"MainFeedFragment:feed_timeline:1:cold_start:{int(time.time() * 1000)}:::{int(time.time() * 1000)}"
+                "container_module": "feed_timeline"
             }
             
-            signed_body = InstagramEncryption.create_signed_body(delete_comment_data)
+            signed_body = InstagramEncryption.create_signed_body(unlike_data)
             
             headers = {
                 "accept-language": "fr-FR, en-US",
@@ -1822,13 +1677,13 @@ class InstagramClient:
                 "ig-intended-user-id": user_id,
                 "ig-u-ds-user-id": user_id,
                 "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": f"IgApi: media/{media_id}/comment/{comment_id}/delete/",
+                "x-fb-friendly-name": f"IgApi: media/{media_id}/unlike/",
             }
             
             response = self.auth.session.post(
-                f"https://i.instagram.com/api/v1/media/{media_id}/comment/{comment_id}/delete/",
+                f"https://i.instagram.com/api/v1/media/{media_id}/unlike/",
                 headers=headers,
-                data={"signed_body": signed_body},
+                data={"signed_body": signed_body, "d": "0"},
                 timeout=10
             )
             
@@ -1836,385 +1691,20 @@ class InstagramClient:
                 parsed_data = InstagramEncryption.safe_parse_json(response)
                 
                 if InstagramEncryption.is_success_response(response, parsed_data):
+                    print("✅ Unlike réussi")
                     return {"success": True, "data": parsed_data}
                 else:
-                    return self.handle_action_error(response.status_code, parsed_data,
+                    return self.handle_action_error(response.status_code, parsed_data, 
                                                  InstagramEncryption.safe_decode_response(response))
             else:
                 if response.status_code == 400:
                     parsed_data = InstagramEncryption.safe_parse_json(response)
-                    return self.handle_action_error(response.status_code, parsed_data,
+                    return self.handle_action_error(response.status_code, parsed_data, 
                                                  InstagramEncryption.safe_decode_response(response))
                 
                 return self.handle_http_error(response.status_code, 
                                             InstagramEncryption.safe_decode_response(response))
                 
         except Exception as e:
-            return {"success": False, "error": f"Erreur: {str(e)}"}
-    
-    def get_followers(self, user_input: str = None, count: int = 20) -> dict:
-        """Récupérer la liste des abonnés"""
-        try:
-            if user_input:
-                if self.api:
-                    user_id = self.api.extract_user_id_from_url(user_input)
-                else:
-                    user_id = self._extract_user_id_basic(user_input)
-            else:
-                user_id = self._get_user_id_from_session()
-            
-            if not user_id:
-                return {"success": False, "error": "User ID non trouvé"}
-            
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
-            
-            params = {
-                "count": str(count),
-                "max_id": ""
-            }
-            
-            response = self.auth.session.get(
-                f"https://i.instagram.com/api/v1/friendships/{user_id}/followers/",
-                headers=headers,
-                params=params,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                parsed_data = InstagramEncryption.safe_parse_json(response)
-                
-                if InstagramEncryption.is_success_response(response, parsed_data):
-                    users = parsed_data.get("users", [])
-                    followers_list = []
-                    
-                    for user in users:
-                        follower_info = {
-                            "user_id": str(user.get("pk")),
-                            "username": user.get("username", ""),
-                            "full_name": user.get("full_name", ""),
-                            "is_private": user.get("is_private", False),
-                            "is_verified": user.get("is_verified", False),
-                            "profile_pic_url": user.get("profile_pic_url", "")
-                        }
-                        followers_list.append(follower_info)
-                    
-                    return {"success": True, "data": followers_list}
-                else:
-                    return self.handle_action_error(response.status_code, parsed_data,
-                                                 InstagramEncryption.safe_decode_response(response))
-            else:
-                return self.handle_http_error(response.status_code, 
-                                            InstagramEncryption.safe_decode_response(response))
-                
-        except Exception as e:
-            return {"success": False, "error": f"Erreur: {str(e)}"}
-    
-    def get_following(self, user_input: str = None, count: int = 20) -> dict:
-        """Récupérer la liste des abonnements"""
-        try:
-            if user_input:
-                if self.api:
-                    user_id = self.api.extract_user_id_from_url(user_input)
-                else:
-                    user_id = self._extract_user_id_basic(user_input)
-            else:
-                user_id = self._get_user_id_from_session()
-            
-            if not user_id:
-                return {"success": False, "error": "User ID non trouvé"}
-            
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
-            
-            params = {
-                "count": str(count),
-                "max_id": ""
-            }
-            
-            response = self.auth.session.get(
-                f"https://i.instagram.com/api/v1/friendships/{user_id}/following/",
-                headers=headers,
-                params=params,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                parsed_data = InstagramEncryption.safe_parse_json(response)
-                
-                if InstagramEncryption.is_success_response(response, parsed_data):
-                    users = parsed_data.get("users", [])
-                    following_list = []
-                    
-                    for user in users:
-                        following_info = {
-                            "user_id": str(user.get("pk")),
-                            "username": user.get("username", ""),
-                            "full_name": user.get("full_name", ""),
-                            "is_private": user.get("is_private", False),
-                            "is_verified": user.get("is_verified", False),
-                            "profile_pic_url": user.get("profile_pic_url", "")
-                        }
-                        following_list.append(following_info)
-                    
-                    return {"success": True, "data": following_list}
-                else:
-                    return self.handle_action_error(response.status_code, parsed_data,
-                                                 InstagramEncryption.safe_decode_response(response))
-            else:
-                return self.handle_http_error(response.status_code, 
-                                            InstagramEncryption.safe_decode_response(response))
-                
-        except Exception as e:
-            return {"success": False, "error": f"Erreur: {str(e)}"}
-    
-    def search_users(self, query: str, count: int = 20) -> dict:
-        """Rechercher des utilisateurs"""
-        try:
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-            }
-            
-            search_params = {
-                "timezone_offset": "10800",
-                "q": query,
-                "count": str(count)
-            }
-            
-            response = self.auth.session.get(
-                "https://i.instagram.com/api/v1/users/search/",
-                params=search_params,
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                parsed_data = InstagramEncryption.safe_parse_json(response)
-                
-                if InstagramEncryption.is_success_response(response, parsed_data):
-                    users = parsed_data.get("users", [])
-                    search_results = []
-                    
-                    for user in users:
-                        user_info = {
-                            "user_id": str(user.get("pk")),
-                            "username": user.get("username", ""),
-                            "full_name": user.get("full_name", ""),
-                            "is_private": user.get("is_private", False),
-                            "is_verified": user.get("is_verified", False),
-                            "profile_pic_url": user.get("profile_pic_url", ""),
-                            "follower_count": user.get("follower_count", 0)
-                        }
-                        search_results.append(user_info)
-                    
-                    return {"success": True, "data": search_results}
-                else:
-                    return self.handle_action_error(response.status_code, parsed_data,
-                                                 InstagramEncryption.safe_decode_response(response))
-            else:
-                return self.handle_http_error(response.status_code, 
-                                            InstagramEncryption.safe_decode_response(response))
-                
-        except Exception as e:
-            return {"success": False, "error": f"Erreur: {str(e)}"}
-    
-    def get_media_comments(self, media_input: str, count: int = 20) -> dict:
-        """Récupérer les commentaires d'un média"""
-        try:
-            if self.api:
-                media_id = self.api.extract_media_id_from_url(media_input)
-            else:
-                media_id = self._extract_media_id_basic(media_input)
-            
-            if not media_id:
-                return {"success": False, "error": "Ce média a été supprimé"}
-            
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
-            
-            params = {
-                "count": str(count),
-                "max_id": ""
-            }
-            
-            response = self.auth.session.get(
-                f"https://i.instagram.com/api/v1/media/{media_id}/comments/",
-                headers=headers,
-                params=params,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                parsed_data = InstagramEncryption.safe_parse_json(response)
-                
-                if InstagramEncryption.is_success_response(response, parsed_data):
-                    comments = parsed_data.get("comments", [])
-                    comments_list = []
-                    
-                    for comment in comments:
-                        comment_info = {
-                            "comment_id": str(comment.get("pk")),
-                            "text": comment.get("text", ""),
-                            "created_at": comment.get("created_at"),
-                            "user": {
-                                "user_id": str(comment.get("user", {}).get("pk")),
-                                "username": comment.get("user", {}).get("username", ""),
-                                "full_name": comment.get("user", {}).get("full_name", ""),
-                                "profile_pic_url": comment.get("user", {}).get("profile_pic_url", "")
-                            }
-                        }
-                        comments_list.append(comment_info)
-                    
-                    return {"success": True, "data": comments_list}
-                else:
-                    return self.handle_action_error(response.status_code, parsed_data,
-                                                 InstagramEncryption.safe_decode_response(response))
-            else:
-                return self.handle_http_error(response.status_code, 
-                                            InstagramEncryption.safe_decode_response(response))
-                
-        except Exception as e:
-            return {"success": False, "error": f"Erreur: {str(e)}"}
-    
-    def get_media_likers(self, media_input: str, count: int = 20) -> dict:
-        """Récupérer les utilisateurs qui ont liké un média"""
-        try:
-            if self.api:
-                media_id = self.api.extract_media_id_from_url(media_input)
-            else:
-                media_id = self._extract_media_id_basic(media_input)
-            
-            if not media_id:
-                return {"success": False, "error": "Ce média a été supprimé"}
-            
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
-            
-            response = self.auth.session.get(
-                f"https://i.instagram.com/api/v1/media/{media_id}/likers/",
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                parsed_data = InstagramEncryption.safe_parse_json(response)
-                
-                if InstagramEncryption.is_success_response(response, parsed_data):
-                    users = parsed_data.get("users", [])
-                    likers_list = []
-                    
-                    for user in users[:count]:  # Limiter au nombre demandé
-                        liker_info = {
-                            "user_id": str(user.get("pk")),
-                            "username": user.get("username", ""),
-                            "full_name": user.get("full_name", ""),
-                            "is_private": user.get("is_private", False),
-                            "is_verified": user.get("is_verified", False),
-                            "profile_pic_url": user.get("profile_pic_url", "")
-                        }
-                        likers_list.append(liker_info)
-                    
-                    return {"success": True, "data": likers_list}
-                else:
-                    return self.handle_action_error(response.status_code, parsed_data,
-                                                 InstagramEncryption.safe_decode_response(response))
-            else:
-                return self.handle_http_error(response.status_code, 
-                                            InstagramEncryption.safe_decode_response(response))
-                
-        except Exception as e:
-            return {"success": False, "error": f"Erreur: {str(e)}"}
-    
-    def get_timeline_feed(self, count: int = 20) -> dict:
-        """Récupérer le feed timeline"""
-        try:
-            user_id = self._get_user_id_from_session()
-            
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
-            
-            params = {
-                "count": str(count),
-                "max_id": ""
-            }
-            
-            response = self.auth.session.get(
-                "https://i.instagram.com/api/v1/feed/timeline/",
-                headers=headers,
-                params=params,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                parsed_data = InstagramEncryption.safe_parse_json(response)
-                
-                if InstagramEncryption.is_success_response(response, parsed_data):
-                    items = parsed_data.get("feed_items", [])
-                    timeline_list = []
-                    
-                    for item in items:
-                        if item.get("media_or_ad"):
-                            media = item["media_or_ad"]
-                            timeline_info = {
-                                "id": media.get("id"),
-                                "code": media.get("code"),
-                                "media_type": media.get("media_type"),
-                                "taken_at": media.get("taken_at"),
-                                "like_count": media.get("like_count", 0),
-                                "comment_count": media.get("comment_count", 0),
-                                "user": {
-                                    "user_id": str(media.get("user", {}).get("pk")),
-                                    "username": media.get("user", {}).get("username", ""),
-                                    "full_name": media.get("user", {}).get("full_name", ""),
-                                    "profile_pic_url": media.get("user", {}).get("profile_pic_url", "")
-                                }
-                            }
-                            
-                            caption_info = media.get("caption")
-                            if caption_info:
-                                timeline_info["caption"] = caption_info.get("text", "")
-                            else:
-                                timeline_info["caption"] = ""
-                            
-                            timeline_list.append(timeline_info)
-                    
-                    return {"success": True, "data": timeline_list}
-                else:
-                    return self.handle_action_error(response.status_code, parsed_data,
-                                                 InstagramEncryption.safe_decode_response(response))
-            else:
-                return self.handle_http_error(response.status_code, 
-                                            InstagramEncryption.safe_decode_response(response))
-                
-        except Exception as e:
-            return {"success": False, "error": f"Erreur: {str(e)}"}
+            print("❌ Ce media a ete supprime")
+            return {"success": False, "error": "Ce media a ete supprime"}

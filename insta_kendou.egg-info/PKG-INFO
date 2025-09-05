@@ -1,0 +1,72 @@
+Metadata-Version: 2.4
+Name: insta_kendou
+Version: 1.0.0
+Summary: Bibliothèque Instagram complète avec authentification 2FA et gestion des médias
+Home-page: https://github.com/Ken56266325/insta_kendou
+Author: Kenny
+Author-email: mampifaly56266325@gmail.com
+License: Proprietary
+Keywords: instagram api automation social media 2fa authentication
+Platform: any
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.31.0
+Requires-Dist: Pillow>=10.0.0
+Requires-Dist: pycryptodome>=3.19.0
+Requires-Dist: PyNaCl>=1.5.0
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: platform
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# insta_kendou
+
+Bibliothèque Instagram complète avec authentification 2FA et gestion des médias.
+
+## Installation
+
+```bash
+pip install insta_kendou
+```
+
+## Utilisation
+
+```python
+from insta_kendou import InstagramClient
+
+# Initialiser le client
+client = InstagramClient()
+
+# Se connecter
+result = client.login("username", "password")
+
+# Utiliser les fonctionnalités
+if result["success"]:
+    # Liker un post
+    client.like_post("https://instagram.com/p/ABC123/")
+    
+    # Publier une story
+    client.upload_story("/path/to/image.jpg")
+```
+
+## Licence
+
+Propriétaire - Contactez le créateur pour les droits d'utilisation.

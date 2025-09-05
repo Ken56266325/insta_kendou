@@ -1,0 +1,18 @@
+{
+  "android_id": "android-3d43d23362b37952",
+  "device_uuid": "009d2bb6-ff4d-5893-9af6-5c1c978d9134",
+  "connection_type": "WIFI",
+  "model": "SM-G991B",
+  "brand": "samsung",
+  "manufacturer": "samsung",
+  "device": "z3q",
+  "android_version": "12",
+  "sdk_version": "32",
+  "build_id": "SP1A.210812.016",
+  "screen_width": 900,
+  "screen_height": 1600,
+  "screen_density": 320,
+  "family_device_id": "efa0f325-3103-53d3-a0ae-bbcc026ece2a",
+  "user_agent": "Instagram 394.0.0.46.81 Android (32/12; 320dpi; 900x1600; samsung; SM-G991B; z3q; exynos8895; fr_FR; 779659870)",
+  "x_mid": "aLlgZgABAAGMfWir6Z_Z2mdA2QhE"
+}
