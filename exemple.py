@@ -1,783 +1,531 @@
 # -*- coding: utf-8 -*-
 """
-SCRIPT D'EXEMPLE COMPLET - insta_kendou
-Démonstration de toutes les fonctionnalités de la bibliothèque Instagram
+🤖 INSTAGRAM BOT COMPLET - insta_kendou
+Interface colorée avec toutes les fonctionnalités
 
-Code d'accès obligatoir pour utiliser la bibliothèque
+Code d'accès obligatoire pour utiliser la bibliothèque
 """
 
 from insta_kendou import InstagramClient
 import os
+import glob
+import json
 import time
 
 # CODE D'ACCÈS OBLIGATOIRE - NÉCESSAIRE POUR UTILISER LA BIBLIOTHÈQUE
 ACCESS_CODE = "MampifalyfelicienKennyNestinFoad56266325$17Mars2004FeliciteGemmellineNestine"
 
-def main():
-    """Fonction principale avec menu interactif"""
-    print("=" * 60)
-    print("🤖 INSTAGRAM BOT - BIBLIOTHÈQUE INSTA_KENDOU")
-    print("=" * 60)
+# Couleurs pour l'interface
+class Colors:
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    PURPLE = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    ORANGE = '\033[38;5;208m'
+
+def print_colored(text, color):
+    """Afficher du texte coloré"""
+    print(f"{color}{text}{Colors.RESET}")
+
+def print_header(title):
+    """Afficher un en-tête stylé"""
+    print(f"\n{Colors.CYAN}{'=' * 60}{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.WHITE}{title.center(60)}{Colors.RESET}")
+    print(f"{Colors.CYAN}{'=' * 60}{Colors.RESET}")
+
+def print_success(message):
+    """Afficher un message de succès"""
+    print(f"{Colors.GREEN}✅ {message}{Colors.RESET}")
+
+def print_error(message):
+    """Afficher un message d'erreur"""
+    print(f"{Colors.RED}❌ {message}{Colors.RESET}")
+
+def print_warning(message):
+    """Afficher un avertissement"""
+    print(f"{Colors.YELLOW}⚠️ {message}{Colors.RESET}")
+
+def print_info(message):
+    """Afficher une information"""
+    print(f"{Colors.BLUE}ℹ️ {message}{Colors.RESET}")
+
+def print_media_id(media_id):
+    """Afficher un Media ID stylé"""
+    print(f"{Colors.PURPLE}MEDIA ID{Colors.RESET}: {Colors.WHITE}{media_id}{Colors.RESET}")
+
+def print_user_id(user_id):
+    """Afficher un User ID stylé"""
+    print(f"{Colors.PURPLE}USER ID{Colors.RESET}: {Colors.WHITE}{user_id}{Colors.RESET}")
+
+def get_connected_accounts():
+    """Récupérer la liste des comptes connectés"""
+    accounts = []
+    sessions_dir = "sessions"
     
-    # Initialisation du client
+    if os.path.exists(sessions_dir):
+        session_files = glob.glob(os.path.join(sessions_dir, "*_ig_complete.json"))
+        
+        for file_path in session_files:
+            try:
+                filename = os.path.basename(file_path)
+                username = filename.replace("_ig_complete.json", "")
+                
+                # Vérifier la validité du fichier
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    session_data = json.load(f)
+                    
+                user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
+                full_name = user_data.get("full_name", "")
+                is_private = user_data.get("is_private", False)
+                is_verified = user_data.get("is_verified", False)
+                
+                accounts.append({
+                    "username": username,
+                    "full_name": full_name,
+                    "is_private": is_private,
+                    "is_verified": is_verified,
+                    "file_path": file_path
+                })
+            except Exception:
+                continue
+    
+    return accounts
+
+def show_accounts_menu():
+    """Afficher le menu des comptes connectés"""
+    accounts = get_connected_accounts()
+    
+    print_header("COMPTES CONNECTÉS")
+    
+    if not accounts:
+        print_warning("Aucun compte connecté trouvé")
+        return None
+    
+    print(f"{Colors.CYAN}📱 Comptes disponibles:{Colors.RESET}")
+    for i, account in enumerate(accounts, 1):
+        verified = f" {Colors.GREEN}✅{Colors.RESET}" if account['is_verified'] else ""
+        private = f" {Colors.YELLOW}🔒{Colors.RESET}" if account['is_private'] else ""
+        full_name = f" - {account['full_name']}" if account['full_name'] else ""
+        
+        print(f"{Colors.WHITE}{i:2d}.{Colors.RESET} {Colors.BOLD}@{account['username']}{Colors.RESET}{verified}{private}{full_name}")
+    
+    print(f"{Colors.RED}{len(accounts)+1:2d}. 🗑️  Supprimer un compte{Colors.RESET}")
+    print(f"{Colors.BLUE}{len(accounts)+2:2d}. 🔙 Retour{Colors.RESET}")
+    
+    try:
+        choice = int(input(f"\n{Colors.CYAN}🎯 Choisissez un compte: {Colors.RESET}")) - 1
+        
+        if choice == len(accounts):  # Supprimer
+            return handle_delete_account(accounts)
+        elif choice == len(accounts) + 1:  # Retour
+            return None
+        elif 0 <= choice < len(accounts):
+            return accounts[choice]['username']
+        else:
+            print_error("Choix invalide")
+            return None
+    except (ValueError, KeyboardInterrupt):
+        return None
+
+def handle_delete_account(accounts):
+    """Gérer la suppression d'un compte"""
+    print_header("SUPPRIMER UN COMPTE")
+    
+    for i, account in enumerate(accounts, 1):
+        print(f"{Colors.WHITE}{i:2d}.{Colors.RESET} @{account['username']}")
+    
+    print(f"{Colors.BLUE}{len(accounts)+1:2d}. 🔙 Annuler{Colors.RESET}")
+    
+    try:
+        choice = int(input(f"\n{Colors.RED}🗑️  Compte à supprimer: {Colors.RESET}")) - 1
+        
+        if choice == len(accounts):  # Annuler
+            return None
+        elif 0 <= choice < len(accounts):
+            account = accounts[choice]
+            confirm = input(f"{Colors.RED}⚠️  Confirmer suppression de @{account['username']}? (oui/non): {Colors.RESET}").strip().lower()
+            
+            if confirm in ['oui', 'o', 'yes', 'y']:
+                try:
+                    os.remove(account['file_path'])
+                    print_success(f"Compte @{account['username']} supprimé")
+                except Exception as e:
+                    print_error(f"Erreur suppression: {e}")
+            else:
+                print_info("Suppression annulée")
+            return None
+        else:
+            print_error("Choix invalide")
+            return None
+    except (ValueError, KeyboardInterrupt):
+        return None
+
+def login_or_load_session():
+    """Connexion ou chargement de session"""
+    print_header("🔐 CONNEXION INSTAGRAM")
+    
+    # Vérifier s'il y a des comptes connectés
+    accounts = get_connected_accounts()
+    
+    if accounts:
+        print(f"{Colors.GREEN}📱 Comptes disponibles trouvés{Colors.RESET}")
+        print(f"{Colors.BLUE}1.{Colors.RESET} Utiliser un compte existant")
+        print(f"{Colors.CYAN}2.{Colors.RESET} Nouvelle connexion")
+        
+        try:
+            choice = input(f"\n{Colors.CYAN}🎯 Votre choix: {Colors.RESET}").strip()
+            
+            if choice == "1":
+                username = show_accounts_menu()
+                if username:
+                    client = InstagramClient()
+                    session_data = client.load_session(username)
+                    if session_data:
+                        print_success(f"Session chargée pour @{username}")
+                        return client, username
+                    else:
+                        print_error(f"Impossible de charger la session pour @{username}")
+                        return None, None
+        except KeyboardInterrupt:
+            return None, None
+    
+    # Nouvelle connexion
     client = InstagramClient()
     
-    # Connexion
-    print("\n🔐 CONNEXION INSTAGRAM")
-    print("=" * 40)
-    
     while True:
-        username = input("👤 Nom d'utilisateur Instagram: ").strip()
-        if not username:
-            print("❌ Nom d'utilisateur requis")
-            continue
-            
-        # Essayer de charger une session existante
-        print(f"🔍 Recherche de session existante pour @{username}...")
-        session_data = client.load_session(username)
-        
-        if session_data:
-            print(f"✅ Session chargée pour @{username}")
-            # Afficher les informations du compte
-            show_account_info(client)
-            break
-        else:
-            print("🔑 Aucune session trouvée, connexion requise")
-            password = input("🔐 Mot de passe Instagram: ").strip()
-            if not password:
-                print("❌ Mot de passe requis")
+        try:
+            username = input(f"{Colors.CYAN}👤 Nom d'utilisateur Instagram: {Colors.RESET}").strip()
+            if not username:
+                print_error("Nom d'utilisateur requis")
                 continue
             
-            print("♻ Connexion en cours...")
+            # Vérifier session existante
+            session_data = client.load_session(username)
+            if session_data:
+                print_success(f"Session existante trouvée pour @{username}")
+                return client, username
+            
+            # Demander mot de passe
+            password = input(f"{Colors.CYAN}🔐 Mot de passe Instagram: {Colors.RESET}").strip()
+            if not password:
+                print_error("Mot de passe requis")
+                continue
+            
+            print_info("Connexion en cours...")
             login_result = client.login(username, password)
             
             if login_result["success"]:
-                # Gérer le statut du compte
                 account_status = login_result.get("status", "active")
                 
                 if account_status == "disabled":
-                    print(f"❌ Le compte @{username} est désactivé et ne peut plus être utilisé")
+                    print_error(f"Le compte @{username} est désactivé")
                     continue
                 elif account_status == "suspended":
-                    print(f"⚠️ Le compte @{username} est suspendu mais connecté")
-                    print("✅ Connexion réussie malgré la suspension")
-                    show_account_info(client)
-                    break
+                    print_warning(f"Le compte @{username} est suspendu mais connecté")
+                    print_success(f"Connexion réussie pour @{username}")
+                    return client, username
                 else:
-                    # Afficher les stats si disponibles
-                    if "user_stats" in login_result:
-                        stats = login_result["user_stats"]
-                        print(f"✅ Connexion réussie pour @{username}")
-                        print(f"📊 {stats.get('follower_count', 0)} abonnés | {stats.get('following_count', 0)} abonnements | {stats.get('media_count', 0)} publications")
-                        status = "Privé" if stats.get("is_private") else "Public"
-                        verified = " ✅" if stats.get("is_verified") else ""
-                        print(f"🔒 Compte {status}{verified}")
-                    else:
-                        print(f"✅ Connexion réussie pour @{username}")
-                    
-                    show_account_info(client)
-                    break
+                    print_success(f"Connexion réussie pour @{username}")
+                    return client, username
             else:
                 error_msg = login_result["message"]
                 
-                if error_msg == "restart_login":
-                    print("🔄 Redémarrage de la connexion...")
-                    continue
-                elif error_msg == "user_not_found":
-                    print(f"❌ Le compte @{username} n'existe pas")
-                    print("Vérifiez le nom d'utilisateur et réessayez.")
-                    continue
+                if error_msg == "user_not_found":
+                    print_error(f"Le compte @{username} n'existe pas")
                 elif error_msg == "password_incorrect":
-                    print("❌ Mot de passe incorrect")
-                    print("Veuillez entrer le bon mot de passe.")
-                    continue
+                    print_error("Mot de passe incorrect")
                 elif error_msg == "invalid_credentials":
-                    print("❌ Identifiants incorrects")
-                    print("Vérifiez vos informations de connexion.")
-                    continue
+                    print_error("Identifiants incorrects")
                 elif error_msg == "rate_limit":
-                    print("❌ Trop de tentatives de connexion")
-                    print("Attendez quelques heures avant de réessayer.")
-                    return
-                elif error_msg.startswith("Échec 2FA:"):
-                    print(f"❌ {error_msg}")
-                    print("Vérifiez votre connexion et réessayez.")
-                    continue
+                    print_error("Trop de tentatives - Attendez quelques heures")
+                    return None, None
                 else:
-                    print(f"❌ Erreur de connexion: {error_msg}")
-                    continue
-    
-    # Menu principal
-    while True:
-        show_main_menu()
-        choice = input("🎯 Votre choix: ").strip()
-        
-        if choice == "0":
-            print("👋 Au revoir!")
-            break
-        elif choice == "1":
-            handle_like_action(client)
-        elif choice == "2":
-            handle_comment_action(client)
-        elif choice == "3":
-            handle_follow_action(client)
-        elif choice == "4":
-            handle_story_upload(client)
-        elif choice == "5":
-            handle_post_upload(client)
-        elif choice == "6":
-            handle_delete_post(client)
-        elif choice == "7":
-            handle_account_info(client)
-        elif choice == "8":
-            handle_privacy_toggle(client)
-        elif choice == "9":
-            handle_user_info(client)
-        elif choice == "10":
-            handle_media_info(client)
-        elif choice == "11":
-            handle_search_users(client)
-        elif choice == "12":
-            handle_timeline_feed(client)
-        elif choice == "13":
-            handle_followers_following(client)
-        elif choice == "14":
-            handle_user_media(client)
-        elif choice == "15":
-            handle_media_interactions(client)
-        elif choice == "16":
-            handle_session_management(client)
-        elif choice == "17":
-            handle_advanced_actions(client)
-        else:
-            print("❌ Choix invalide")
-        
-        input("\n⏳ Appuyez sur Entrée pour continuer...")
-
-def show_account_info(client):
-    """Afficher les informations du compte connecté"""
-    account_info = client.get_account_info()
-    if account_info["success"]:
-        data = account_info["data"]
-        print(f"\n📋 INFORMATIONS DU COMPTE")
-        print(f"👤 Username: @{data['username']}")
-        print(f"🆔 User ID: {client._get_user_id_from_session()}")
-        print(f"🔧 X-MID: {client.get_x_mid()}")
+                    print_error(f"Erreur: {error_msg}")
+                
+                continue
+                
+        except KeyboardInterrupt:
+            print_info("\nConnexion annulée")
+            return None, None
 
 def show_main_menu():
     """Afficher le menu principal"""
-    print("\n" + "=" * 60)
-    print("🎯 MENU PRINCIPAL - TOUTES LES ACTIONS")
-    print("=" * 60)
-    print("📱 ACTIONS DE BASE:")
-    print("1. ❤️  Liker un post")
-    print("2. 💬 Commenter un post")
-    print("3. 👥 Suivre un utilisateur")
-    print("4. 📸 Publier une story")
-    print("5. 📷 Publier un post")
-    print("6. 🗑️  Supprimer dernière publication")
+    print_header("🎯 MENU PRINCIPAL")
     
-    print("\n📊 INFORMATIONS:")
-    print("7. ℹ️  Voir infos de mon compte")
-    print("8. 🔒 Changer confidentialité")
-    print("9. 👤 Infos d'un utilisateur")
-    print("10. 📷 Infos d'un post")
+    print(f"{Colors.CYAN}📱 ACTIONS DE BASE:{Colors.RESET}")
+    print(f"{Colors.WHITE}1.{Colors.RESET} ❤️  Liker un post")
+    print(f"{Colors.WHITE}2.{Colors.RESET} 👥 Suivre un utilisateur") 
+    print(f"{Colors.WHITE}3.{Colors.RESET} 💬 Commenter un post")
+    print(f"{Colors.WHITE}4.{Colors.RESET} 📸 Publier une story")
+    print(f"{Colors.WHITE}5.{Colors.RESET} 📷 Publier un post")
     
-    print("\n🔍 RECHERCHE ET DÉCOUVERTE:")
-    print("11. 🔎 Rechercher utilisateurs")
-    print("12. 📱 Voir timeline/feed")
-    print("13. 👥 Mes abonnés/abonnements")
-    print("14. 📸 Posts d'un utilisateur")
-    print("15. 💬 Interactions d'un post")
+    print(f"\n{Colors.CYAN}⚙️  GESTION COMPTE:{Colors.RESET}")
+    print(f"{Colors.WHITE}6.{Colors.RESET} 🔒 Changer confidentialité")
+    print(f"{Colors.WHITE}7.{Colors.RESET} 🗑️  Supprimer dernière publication")
+    print(f"{Colors.WHITE}8.{Colors.RESET} ℹ️  Informations du compte")
     
-    print("\n⚙️ AVANCÉ:")
-    print("16. 💾 Gestion session")
-    print("17. 🚀 Actions avancées")
+    print(f"\n{Colors.CYAN}📋 GESTION SESSIONS:{Colors.RESET}")
+    print(f"{Colors.WHITE}9.{Colors.RESET} 📱 Changer de compte")
+    print(f"{Colors.WHITE}10.{Colors.RESET} 📋 Liste des comptes")
     
-    print("\n0. 🚪 Quitter")
-    print("=" * 60)
+    print(f"\n{Colors.RED}0. 🚪 Quitter{Colors.RESET}")
 
 def handle_like_action(client):
     """Gérer l'action de like"""
-    print("\n❤️ LIKER UN POST")
-    print("=" * 40)
-    print("Formats supportés:")
-    print("- https://www.instagram.com/p/ABC123/")
-    print("- https://instagr.am/p/ABC123/")
-    print("- https://vt.tiktok.com/SHORT_LINK/")
-    print("- Liens courts (bit.ly, t.co, etc.)")
+    print_header("❤️ LIKER UN POST")
     
-    url = input("🔗 URL du post: ").strip()
+    url = input(f"{Colors.CYAN}🔗 URL du post: {Colors.RESET}").strip()
     if not url:
-        print("❌ URL requise")
+        print_error("URL requise")
         return
     
-    # Afficher le media ID si possible
+    # Extraire et afficher le media ID
     if client.api:
         media_id = client.api.extract_media_id_from_url(url)
         if media_id:
-            print(f"📷 Media ID extrait: {media_id}")
+            print_media_id(media_id)
+        else:
+            print_warning("Media ID non trouvé")
     
-    print("🔄 Like en cours...")
+    print_info("Like en cours...")
     result = client.like_post(url)
     
     if result["success"]:
-        print("✅ Like réussi!")
+        print_success("Like réussi!")
     else:
-        print(f"❌ Erreur: {result['error']}")
-
-def handle_comment_action(client):
-    """Gérer l'action de commentaire"""
-    print("\n💬 COMMENTER UN POST")
-    print("=" * 40)
-    
-    url = input("🔗 URL du post: ").strip()
-    if not url:
-        print("❌ URL requise")
-        return
-    
-    comment = input("💬 Votre commentaire: ").strip()
-    if not comment:
-        print("❌ Commentaire requis")
-        return
-    
-    # Afficher le media ID si possible
-    if client.api:
-        media_id = client.api.extract_media_id_from_url(url)
-        if media_id:
-            print(f"📷 Media ID: {media_id}")
-    
-    print("🔄 Commentaire en cours...")
-    result = client.comment_post(url, comment)
-    
-    if result["success"]:
-        print("✅ Commentaire ajouté!")
-    else:
-        print(f"❌ Erreur: {result['error']}")
+        print_error(f"Échec: {result['error']}")
 
 def handle_follow_action(client):
     """Gérer l'action de follow"""
-    print("\n👥 SUIVRE UN UTILISATEUR")
-    print("=" * 40)
-    print("Formats supportés:")
-    print("- https://www.instagram.com/username/")
-    print("- @username")
-    print("- username (recherche similaire activée)")
+    print_header("👥 SUIVRE UN UTILISATEUR")
     
-    url = input("👤 URL du profil: ").strip()
+    url = input(f"{Colors.CYAN}👤 URL du profil ou @username: {Colors.RESET}").strip()
     if not url:
-        print("❌ URL requise")
+        print_error("URL requise")
         return
     
-    # Si c'est juste un username, convertir en URL
-    if not url.startswith('http') and not '@' in url:
+    # Convertir username en URL si nécessaire
+    if not url.startswith('http'):
         url = f"https://www.instagram.com/{url.replace('@', '')}/"
     
-    # Afficher l'user ID si possible
+    # Extraire et afficher l'user ID
     if client.api:
         user_id = client.api.extract_user_id_from_url(url)
         if user_id:
-            print(f"👤 User ID: {user_id}")
+            print_user_id(user_id)
+        else:
+            print_warning("User ID non trouvé")
     
-    print("🔄 Follow en cours...")
+    print_info("Follow en cours...")
     result = client.follow_user(url)
     
     if result["success"]:
-        print("✅ Follow réussi!")
+        print_success("Follow réussi!")
     else:
-        print(f"❌ Erreur: {result['error']}")
+        print_error(f"Échec: {result['error']}")
+
+def handle_comment_action(client):
+    """Gérer l'action de commentaire"""
+    print_header("💬 COMMENTER UN POST")
+    
+    url = input(f"{Colors.CYAN}🔗 URL du post: {Colors.RESET}").strip()
+    if not url:
+        print_error("URL requise")
+        return
+    
+    comment = input(f"{Colors.CYAN}💬 Votre commentaire: {Colors.RESET}").strip()
+    if not comment:
+        print_error("Commentaire requis")
+        return
+    
+    # Extraire et afficher le media ID
+    if client.api:
+        media_id = client.api.extract_media_id_from_url(url)
+        if media_id:
+            print_media_id(media_id)
+    
+    print_info("Commentaire en cours...")
+    result = client.comment_post(url, comment)
+    
+    if result["success"]:
+        print_success("Commentaire ajouté!")
+    else:
+        print_error(f"Échec: {result['error']}")
 
 def handle_story_upload(client):
     """Gérer l'upload de story"""
-    print("\n📸 PUBLIER UNE STORY")
-    print("=" * 40)
-    print("Formats supportés: JPG, PNG")
-    print("Résolution optimale: 720x1280 (9:16)")
+    print_header("📸 PUBLIER UNE STORY")
     
-    image_path = input("📁 Chemin vers l'image: ").strip()
+    image_path = input(f"{Colors.CYAN}📁 Chemin vers l'image: {Colors.RESET}").strip()
     if not image_path:
-        print("❌ Chemin requis")
+        print_error("Chemin requis")
         return
     
     if not os.path.exists(image_path):
-        print(f"❌ Fichier non trouvé: {image_path}")
+        print_error(f"Fichier non trouvé: {image_path}")
         return
     
-    print("🔄 Upload story en cours...")
+    print_info("Upload story en cours...")
     result = client.upload_story(image_path)
     
     if result["success"]:
-        print("✅ Story publiée avec succès!")
+        print_success("Story publiée!")
     else:
-        print(f"❌ Erreur: {result['error']}")
+        print_error(f"Échec: {result['error']}")
 
 def handle_post_upload(client):
     """Gérer l'upload de post"""
-    print("\n📷 PUBLIER UN POST")
-    print("=" * 40)
+    print_header("📷 PUBLIER UN POST")
     
-    image_path = input("📁 Chemin vers l'image: ").strip()
+    image_path = input(f"{Colors.CYAN}📁 Chemin vers l'image: {Colors.RESET}").strip()
     if not image_path:
-        print("❌ Chemin requis")
+        print_error("Chemin requis")
         return
     
     if not os.path.exists(image_path):
-        print(f"❌ Fichier non trouvé: {image_path}")
+        print_error(f"Fichier non trouvé: {image_path}")
         return
     
-    caption = input("📝 Légende (optionnel): ").strip()
+    caption = input(f"{Colors.CYAN}📝 Légende (optionnel): {Colors.RESET}").strip()
     
-    print("🔄 Upload post en cours...")
+    print_info("Upload post en cours...")
     result = client.upload_post(image_path, caption)
     
     if result["success"]:
-        print("✅ Post publié avec succès!")
+        print_success("Post publié!")
     else:
-        print(f"❌ Erreur: {result['error']}")
-
-def handle_delete_post(client):
-    """Gérer la suppression de post"""
-    print("\n🗑️ SUPPRIMER DERNIÈRE PUBLICATION")
-    print("=" * 40)
-    
-    confirm = input("⚠️ Confirmer la suppression? (oui/non): ").strip().lower()
-    if confirm not in ['oui', 'o', 'yes', 'y']:
-        print("❌ Suppression annulée")
-        return
-    
-    print("🔄 Suppression en cours...")
-    result = client.delete_last_post()
-    
-    if result["success"]:
-        print("✅ Publication supprimée!")
-    else:
-        print(f"❌ Erreur: {result['error']}")
-
-def handle_account_info(client):
-    """Afficher les infos complètes du compte"""
-    print("\n📊 INFORMATIONS COMPLÈTES DU COMPTE")
-    print("=" * 50)
-    
-    account_info = client.get_account_info()
-    if account_info["success"]:
-        data = account_info["data"]
-        print(f"👤 Username: @{data['username']}")
-        print(f"📝 Nom complet: {data['full_name']}")
-        print(f"🆔 User ID: {client._get_user_id_from_session()}")
-        print(f"🔒 Statut: {data['account_status']}")
-        print(f"✅ Vérifié: {'Oui' if data['is_verified'] else 'Non'}")
-        print(f"🏢 Business: {'Oui' if data['is_business'] else 'Non'}")
-        print(f"👥 Abonnés: {data['follower_count']:,}")
-        print(f"🔄 Abonnements: {data['following_count']:,}")
-        print(f"📸 Publications: {data['media_count']:,}")
-        if data['biography']:
-            print(f"📄 Bio: {data['biography']}")
-        
-        print(f"\n🔧 Informations techniques:")
-        print(f"🔧 X-MID: {client.get_x_mid()}")
-        print(f"🔗 Auth Token: {'Présent' if client._get_auth_token() else 'Absent'}")
-    else:
-        print(f"❌ Erreur: {account_info['error']}")
+        print_error(f"Échec: {result['error']}")
 
 def handle_privacy_toggle(client):
     """Gérer le changement de confidentialité"""
-    print("\n🔒 CHANGER CONFIDENTIALITÉ")
-    print("=" * 40)
+    print_header("🔒 CHANGER CONFIDENTIALITÉ")
     
     account_info = client.get_account_info()
     if account_info["success"]:
         current_status = account_info["data"]["account_status"]
-        print(f"📊 Statut actuel: {current_status}")
+        print_info(f"Statut actuel: {current_status}")
         
         action = "rendre public" if current_status == "Privé" else "rendre privé"
-        confirm = input(f"🔄 Confirmer {action}? (oui/non): ").strip().lower()
+        confirm = input(f"{Colors.YELLOW}🔄 Confirmer {action}? (oui/non): {Colors.RESET}").strip().lower()
         
         if confirm in ['oui', 'o', 'yes', 'y']:
             result = client.toggle_account_privacy()
             if result["success"]:
                 new_status = result["data"]["new_status"]
-                print(f"✅ Compte maintenant: {new_status}")
+                print_success(f"Compte maintenant: {new_status}")
             else:
-                print(f"❌ Erreur: {result['error']}")
+                print_error(f"Échec: {result['error']}")
         else:
-            print("❌ Changement annulé")
+            print_info("Changement annulé")
     else:
-        print(f"❌ Impossible de récupérer les infos: {account_info['error']}")
+        print_error(f"Impossible de récupérer les infos: {account_info['error']}")
 
-def handle_user_info(client):
-    """Afficher les infos d'un utilisateur"""
-    print("\n👤 INFORMATIONS D'UN UTILISATEUR")
-    print("=" * 40)
+def handle_delete_post(client):
+    """Gérer la suppression de post"""
+    print_header("🗑️ SUPPRIMER DERNIÈRE PUBLICATION")
     
-    url = input("👤 URL du profil ou @username: ").strip()
-    if not url:
-        print("❌ URL requise")
-        return
-    
-    # Convertir username simple en URL
-    if not url.startswith('http'):
-        url = f"https://www.instagram.com/{url.replace('@', '')}/"
-    
-    result = client.get_user_info(url)
-    if result["success"]:
-        data = result["data"]
-        print(f"\n📋 PROFIL DE @{data['username']}")
-        print(f"📝 Nom: {data['full_name']}")
-        print(f"🆔 User ID: {data['user_id']}")
-        print(f"🔒 {data['account_status']}")
-        print(f"✅ Vérifié: {'Oui' if data['is_verified'] else 'Non'}")
-        print(f"🏢 Business: {'Oui' if data['is_business'] else 'Non'}")
-        print(f"👥 {data['follower_count']:,} abonnés")
-        print(f"🔄 {data['following_count']:,} abonnements")
-        print(f"📸 {data['media_count']:,} publications")
-        if data['biography']:
-            print(f"📄 Bio: {data['biography']}")
-    else:
-        print(f"❌ Erreur: {result['error']}")
-
-def handle_media_info(client):
-    """Afficher les infos d'un post"""
-    print("\n📷 INFORMATIONS D'UN POST")
-    print("=" * 40)
-    
-    url = input("🔗 URL du post: ").strip()
-    if not url:
-        print("❌ URL requise")
-        return
-    
-    result = client.get_media_info(url)
-    if result["success"]:
-        data = result["data"]
-        print(f"\n📸 POST {data['code']}")
-        print(f"🆔 Media ID: {data['id']}")
-        print(f"📊 Type: {data['media_type']}")
-        print(f"❤️ {data['like_count']:,} likes")
-        print(f"💬 {data['comment_count']:,} commentaires")
-        print(f"👤 Auteur: @{data['owner'].get('username', 'N/A')}")
-        if data['caption']:
-            print(f"📝 Caption: {data['caption'][:200]}...")
-    else:
-        print(f"❌ Erreur: {result['error']}")
-
-def handle_search_users(client):
-    """Rechercher des utilisateurs"""
-    print("\n🔎 RECHERCHER UTILISATEURS")
-    print("=" * 40)
-    
-    query = input("🔍 Terme de recherche: ").strip()
-    if not query:
-        print("❌ Terme requis")
-        return
-    
-    count = input("📊 Nombre de résultats (défaut: 20): ").strip()
-    try:
-        count = int(count) if count else 20
-    except ValueError:
-        count = 20
-    
-    result = client.search_users(query, count)
-    if result["success"]:
-        users = result["data"]
-        print(f"\n🔍 {len(users)} résultats pour '{query}':")
+    confirm = input(f"{Colors.RED}⚠️  Confirmer la suppression? (oui/non): {Colors.RESET}").strip().lower()
+    if confirm in ['oui', 'o', 'yes', 'y']:
+        print_info("Suppression en cours...")
+        result = client.delete_last_post()
         
-        for i, user in enumerate(users, 1):
-            verified = " ✅" if user['is_verified'] else ""
-            private = " 🔒" if user['is_private'] else ""
-            print(f"{i:2d}. @{user['username']}{verified}{private}")
-            print(f"     {user['full_name']} - {user['follower_count']:,} abonnés")
-            if i >= 10:  # Limiter l'affichage
-                remaining = len(users) - 10
-                if remaining > 0:
-                    print(f"     ... et {remaining} autres résultats")
+        if result["success"]:
+            print_success("Publication supprimée!")
+        else:
+            print_error(f"Échec: {result['error']}")
+    else:
+        print_info("Suppression annulée")
+
+def handle_account_info(client):
+    """Afficher les infos du compte"""
+    print_header("ℹ️ INFORMATIONS DU COMPTE")
+    
+    account_info = client.get_account_info()
+    if account_info["success"]:
+        data = account_info["data"]
+        print(f"{Colors.CYAN}👤 Username:{Colors.RESET} @{data['username']}")
+        print(f"{Colors.CYAN}📝 Nom:{Colors.RESET} {data['full_name']}")
+        print(f"{Colors.CYAN}🔒 Statut:{Colors.RESET} {data['account_status']}")
+        print(f"{Colors.CYAN}✅ Vérifié:{Colors.RESET} {'Oui' if data['is_verified'] else 'Non'}")
+        print(f"{Colors.CYAN}👥 Abonnés:{Colors.RESET} {data['follower_count']:,}")
+        print(f"{Colors.CYAN}🔄 Abonnements:{Colors.RESET} {data['following_count']:,}")
+        print(f"{Colors.CYAN}📸 Publications:{Colors.RESET} {data['media_count']:,}")
+        
+        # Informations techniques
+        print(f"\n{Colors.PURPLE}🔧 User ID:{Colors.RESET} {Colors.WHITE}{client._get_user_id_from_session()}{Colors.RESET}")
+        print(f"{Colors.PURPLE}🔧 X-MID:{Colors.RESET} {Colors.WHITE}{client.get_x_mid()[:20]}...{Colors.RESET}")
+    else:
+        print_error(f"Erreur: {account_info['error']}")
+
+def main():
+    """Fonction principale"""
+    print_colored("🤖 INSTAGRAM BOT - BIBLIOTHÈQUE INSTA_KENDOU", Colors.BOLD + Colors.CYAN)
+    print_colored("Created by Kenny - @Ken56266325", Colors.BLUE)
+    
+    # Connexion
+    client, username = login_or_load_session()
+    if not client:
+        print_error("Connexion échouée")
+        return
+    
+    current_username = username
+    
+    # Menu principal
+    while True:
+        print(f"\n{Colors.GREEN}📱 Connecté en tant que: @{current_username}{Colors.RESET}")
+        show_main_menu()
+        
+        try:
+            choice = input(f"\n{Colors.CYAN}🎯 Votre choix: {Colors.RESET}").strip()
+            
+            if choice == "0":
+                print_success("Au revoir!")
                 break
-    else:
-        print(f"❌ Erreur: {result['error']}")
-
-def handle_timeline_feed(client):
-    """Afficher le timeline/feed"""
-    print("\n📱 TIMELINE / FEED")
-    print("=" * 40)
-    
-    count = input("📊 Nombre de posts (défaut: 15): ").strip()
-    try:
-        count = int(count) if count else 15
-    except ValueError:
-        count = 15
-    
-    result = client.get_timeline_feed(count)
-    if result["success"]:
-        posts = result["data"]
-        print(f"\n📱 {len(posts)} posts dans votre timeline:")
-        
-        for i, post in enumerate(posts[:10], 1):  # Afficher max 10
-            user = post['user']
-            print(f"{i:2d}. @{user['username']}")
-            print(f"     ❤️ {post['like_count']:,} | 💬 {post['comment_count']:,}")
-            if post['caption']:
-                caption = post['caption'][:80] + "..." if len(post['caption']) > 80 else post['caption']
-                print(f"     📝 {caption}")
-            print()
-        
-        if len(posts) > 10:
-            print(f"... et {len(posts) - 10} autres posts")
-    else:
-        print(f"❌ Erreur: {result['error']}")
-
-def handle_followers_following(client):
-    """Gérer abonnés/abonnements"""
-    print("\n👥 ABONNÉS / ABONNEMENTS")
-    print("=" * 40)
-    print("1. 👥 Mes abonnés")
-    print("2. 🔄 Mes abonnements")
-    print("3. 👤 Abonnés d'un utilisateur")
-    print("4. 🔄 Abonnements d'un utilisateur")
-    
-    choice = input("Choix: ").strip()
-    
-    count = input("📊 Nombre à afficher (défaut: 20): ").strip()
-    try:
-        count = int(count) if count else 20
-    except ValueError:
-        count = 20
-    
-    if choice == "1":
-        result = client.get_followers(count=count)
-        title = "MES ABONNÉS"
-    elif choice == "2":
-        result = client.get_following(count=count)
-        title = "MES ABONNEMENTS"
-    elif choice in ["3", "4"]:
-        url = input("👤 URL du profil: ").strip()
-        if not url:
-            print("❌ URL requise")
-            return
-        
-        if not url.startswith('http'):
-            url = f"https://www.instagram.com/{url.replace('@', '')}/"
-        
-        if choice == "3":
-            result = client.get_followers(url, count)
-            title = "ABONNÉS"
-        else:
-            result = client.get_following(url, count)
-            title = "ABONNEMENTS"
-    else:
-        print("❌ Choix invalide")
-        return
-    
-    if result["success"]:
-        users = result["data"]
-        print(f"\n👥 {title} ({len(users)} utilisateurs):")
-        
-        for i, user in enumerate(users[:15], 1):  # Afficher max 15
-            verified = " ✅" if user['is_verified'] else ""
-            private = " 🔒" if user['is_private'] else ""
-            print(f"{i:2d}. @{user['username']}{verified}{private}")
-            if user['full_name']:
-                print(f"     {user['full_name']}")
-        
-        if len(users) > 15:
-            print(f"... et {len(users) - 15} autres")
-    else:
-        print(f"❌ Erreur: {result['error']}")
-
-def handle_user_media(client):
-    """Afficher les posts d'un utilisateur"""
-    print("\n📸 POSTS D'UN UTILISATEUR")
-    print("=" * 40)
-    
-    url = input("👤 URL du profil: ").strip()
-    if not url:
-        print("❌ URL requise")
-        return
-    
-    if not url.startswith('http'):
-        url = f"https://www.instagram.com/{url.replace('@', '')}/"
-    
-    count = input("📊 Nombre de posts (défaut: 12): ").strip()
-    try:
-        count = int(count) if count else 12
-    except ValueError:
-        count = 12
-    
-    result = client.get_user_media_list(url, count)
-    if result["success"]:
-        posts = result["data"]
-        print(f"\n📸 {len(posts)} derniers posts:")
-        
-        for i, post in enumerate(posts[:10], 1):
-            print(f"{i:2d}. Post {post['code']}")
-            print(f"     ❤️ {post['like_count']:,} | 💬 {post['comment_count']:,}")
-            if post['caption']:
-                caption = post['caption'][:60] + "..." if len(post['caption']) > 60 else post['caption']
-                print(f"     📝 {caption}")
-            print()
-        
-        if len(posts) > 10:
-            print(f"... et {len(posts) - 10} autres posts")
-    else:
-        print(f"❌ Erreur: {result['error']}")
-
-def handle_media_interactions(client):
-    """Gérer les interactions d'un post"""
-    print("\n💬 INTERACTIONS D'UN POST")
-    print("=" * 40)
-    print("1. 💬 Commentaires")
-    print("2. ❤️ Utilisateurs qui ont liké")
-    
-    choice = input("Choix: ").strip()
-    
-    url = input("🔗 URL du post: ").strip()
-    if not url:
-        print("❌ URL requise")
-        return
-    
-    count = input("📊 Nombre à afficher (défaut: 20): ").strip()
-    try:
-        count = int(count) if count else 20
-    except ValueError:
-        count = 20
-    
-    if choice == "1":
-        result = client.get_media_comments(url, count)
-        if result["success"]:
-            comments = result["data"]
-            print(f"\n💬 {len(comments)} commentaires:")
-            
-            for i, comment in enumerate(comments[:10], 1):
-                user = comment['user']
-                print(f"{i:2d}. @{user['username']}")
-                print(f"     {comment['text']}")
-                print()
-            
-            if len(comments) > 10:
-                print(f"... et {len(comments) - 10} autres commentaires")
-        else:
-            print(f"❌ Erreur: {result['error']}")
-    
-    elif choice == "2":
-        result = client.get_media_likers(url, count)
-        if result["success"]:
-            likers = result["data"]
-            print(f"\n❤️ {len(likers)} utilisateurs ont liké:")
-            
-            for i, user in enumerate(likers[:15], 1):
-                verified = " ✅" if user['is_verified'] else ""
-                print(f"{i:2d}. @{user['username']}{verified}")
-                if user['full_name']:
-                    print(f"     {user['full_name']}")
-            
-            if len(likers) > 15:
-                print(f"... et {len(likers) - 15} autres")
-        else:
-            print(f"❌ Erreur: {result['error']}")
-    
-    else:
-        print("❌ Choix invalide")
-
-def handle_session_management(client):
-    """Gestion de session"""
-    print("\n💾 GESTION DE SESSION")
-    print("=" * 40)
-    print("1. 💾 Sauvegarder session actuelle")
-    print("2. ℹ️ Informations de session")
-    
-    choice = input("Choix: ").strip()
-    
-    if choice == "1":
-        result = client.dump_session()
-        if result:
-            username = result.get("user_data", {}).get("username", "utilisateur")
-            print(f"✅ Session sauvegardée pour @{username}")
-            print(f"📄 Fichier: sessions/{username}_ig_complete.json")
-        else:
-            print("❌ Impossible de sauvegarder la session")
-    
-    elif choice == "2":
-        print(f"\n📋 INFORMATIONS DE SESSION:")
-        print(f"👤 Username: @{client._get_username_from_session()}")
-        print(f"🆔 User ID: {client._get_user_id_from_session()}")
-        print(f"🔧 X-MID: {client.get_x_mid()}")
-        print(f"🔗 Auth Token: {'Présent' if client._get_auth_token() else 'Absent'}")
-        
-        if client.session_data:
-            created = client.session_data.get("created_at") or client.session_data.get("session_created")
-            if created:
-                import datetime
-                date = datetime.datetime.fromtimestamp(created)
-                print(f"📅 Session créée: {date.strftime('%d/%m/%Y %H:%M:%S')}")
-    
-    else:
-        print("❌ Choix invalide")
-
-def handle_advanced_actions(client):
-    """Actions avancées"""
-    print("\n🚀 ACTIONS AVANCÉES")
-    print("=" * 40)
-    print("1. 💔 Unlike un post")
-    print("2. 👋 Ne plus suivre")
-    print("3. 🗑️ Supprimer un commentaire")
-    print("4. 📊 Mes dernières publications")
-    print("5. 🔍 Test extraction d'IDs")
-    
-    choice = input("Choix: ").strip()
-    
-    if choice == "1":
-        url = input("🔗 URL du post à unliker: ").strip()
-        if url:
-            result = client.unlike_post(url)
-            print("✅ Unlike réussi!" if result["success"] else f"❌ Erreur: {result['error']}")
-    
-    elif choice == "2":
-        url = input("👤 URL du profil à ne plus suivre: ").strip()
-        if url:
-            if not url.startswith('http'):
-                url = f"https://www.instagram.com/{url.replace('@', '')}/"
-            result = client.unfollow_user(url)
-            print("✅ Unfollow réussi!" if result["success"] else f"❌ Erreur: {result['error']}")
-    
-    elif choice == "3":
-        print("⚠️ Nécessite le comment_id du commentaire à supprimer")
-        url = input("🔗 URL du post: ").strip()
-        comment_id = input("🆔 ID du commentaire: ").strip()
-        if url and comment_id:
-            result = client.delete_comment(url, comment_id)
-            print("✅ Commentaire supprimé!" if result["success"] else f"❌ Erreur: {result['error']}")
-    
-    elif choice == "4":
-        if client.api:
-            posts = client.api.get_own_media_list(10)
-            if posts:
-                print(f"\n📸 Mes {len(posts)} dernières publications:")
-                for i, post in enumerate(posts, 1):
-                    print(f"{i:2d}. {post['code']} - ❤️ {post['like_count']:,}")
-                    if post['caption']:
-                        caption = post['caption'][:50] + "..." if len(post['caption']) > 50 else post['caption']
-                        print(f"     📝 {caption}")
+            elif choice == "1":
+                handle_like_action(client)
+            elif choice == "2":
+                handle_follow_action(client)
+            elif choice == "3":
+                handle_comment_action(client)
+            elif choice == "4":
+                handle_story_upload(client)
+            elif choice == "5":
+                handle_post_upload(client)
+            elif choice == "6":
+                handle_privacy_toggle(client)
+            elif choice == "7":
+                handle_delete_post(client)
+            elif choice == "8":
+                handle_account_info(client)
+            elif choice == "9":
+                # Changer de compte
+                new_client, new_username = login_or_load_session()
+                if new_client:
+                    client = new_client
+                    current_username = new_username
+                    print_success(f"Changé vers @{current_username}")
+            elif choice == "10":
+                # Liste des comptes
+                show_accounts_menu()
             else:
-                print("❌ Aucune publication trouvée")
-        else:
-            print("❌ API non initialisée")
-    
-    elif choice == "5":
-        print("\n🔍 TEST EXTRACTION D'IDs")
-        url = input("🔗 URL à tester: ").strip()
-        if url and client.api:
-            if '/p/' in url or '/reel/' in url:
-                media_id = client.api.extract_media_id_from_url(url)
-                print(f"📷 Media ID: {media_id}" if media_id else "❌ Media ID non trouvé")
-            else:
-                user_id = client.api.extract_user_id_from_url(url)
-                print(f"👤 User ID: {user_id}" if user_id else "❌ User ID non trouvé")
-    
-    else:
-        print("❌ Choix invalide")
+                print_error("Choix invalide")
+                
+        except KeyboardInterrupt:
+            print_info("\nRetour au menu")
+            continue
+        
+        input(f"\n{Colors.BLUE}⏳ Appuyez sur Entrée pour continuer...{Colors.RESET}")
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n👋 Arrêt du script par l'utilisateur")
+        print_colored("\n\n👋 Arrêt du script", Colors.YELLOW)
     except Exception as e:
-        print(f"\n❌ Erreur inattendue: {e}")
-        print("💬 Contactez le support: 0389561802 | https://t.me/Kenny5626")
+        print_error(f"Erreur inattendue: {e}")
+        print_info("💬 Support: 0389561802 | https://t.me/Kenny5626")
