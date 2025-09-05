@@ -741,18 +741,16 @@ class InstagramAuth:
         return session_data
     
     def _save_session_fixed(self, username: str, session_data: dict, user_data: dict):
-        """
-        Sauvegarder session avec nom de fichier basique (par défaut)
-        Cette méthode n'est plus utilisée directement par le client
-        """
+        """Sauvegarder session complète avec USERNAME"""
         try:
-            # Créer juste le nom basique avec username
-            session_file = f"{username}.json"
+            os.makedirs("sessions", exist_ok=True)
+            
+            complete_filename = f"sessions/{username}_ig_complete.json"
             
             if not user_data.get("username"):
                 user_data["username"] = username
             
-            # Format session instagrapi complet
+            # Format session instagrapi complet AVEC USERNAME
             instagrapi_session = {
                 "uuids": {
                     "phone_id": str(uuid.uuid4()),
@@ -837,8 +835,16 @@ class InstagramAuth:
                 instagrapi_session["cookies"]["sessionid"] = session_data["sessionid"]
                 instagrapi_session["cookies"]["ds_user_id"] = user_data.get("user_id", "")
             
-            with open(session_file, 'w', encoding='utf-8') as f:
+            with open(complete_filename, 'w', encoding='utf-8') as f:
                 json.dump(instagrapi_session, f, indent=2, ensure_ascii=False)
+            
+            # Supprimer l'ancien fichier simple s'il existe
+            simple_filename = f"sessions/{username}_ig.json"
+            if os.path.exists(simple_filename):
+                try:
+                    os.remove(simple_filename)
+                except:
+                    pass
         
         except Exception as e:
             pass

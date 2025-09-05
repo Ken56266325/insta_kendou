@@ -5,6 +5,7 @@ setup.py
 insta_kendou/__init__.py
 insta_kendou/client.py
 insta_kendou/client1.py
+insta_kendou/client2.py
 insta_kendou.egg-info/PKG-INFO
 insta_kendou.egg-info/SOURCES.txt
 insta_kendou.egg-info/dependency_links.txt
@@ -15,6 +16,7 @@ insta_kendou.egg-info/top_level.txt
 insta_kendou/auth/__init__.py
 insta_kendou/auth/alternative_2fa.py
 insta_kendou/auth/authentication.py
+insta_kendou/auth/authentication1.py
 insta_kendou/auth/bloks_2fa.py
 insta_kendou/auth/challenge_handler.py
 insta_kendou/auth/classic_2fa.py

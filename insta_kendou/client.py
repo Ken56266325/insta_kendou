@@ -283,10 +283,10 @@ class InstagramClient:
         
         Args:
             session_file (str): Chemin complet vers le fichier de session
-                              Ex: "kenny_session.json" ou "sessions/kenny_ig.json"
+                               Exemples: "kenny_session.json", "sessions/kenny_ig.json", "./data/kenny_account.json"
         
         Returns:
-            dict: Données de session si trouvées, {} sinon
+            dict: Données de session ou {} si échec
         """
         try:
             if os.path.exists(session_file):
@@ -295,20 +295,19 @@ class InstagramClient:
                 
                 created_at = session_data.get("created_at") or session_data.get("last_login") or session_data.get("session_created", 0)
                 
-                if time.time() - created_at < 7 * 24 * 3600:
-                    # Extraire username depuis session_data
+                if time.time() - created_at < 7 * 24 * 3600:  # 7 jours
+                    # Extraire username du fichier de session pour les logs
                     user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
-                    username = user_data.get("username") or session_data.get("account_username", "user")
+                    username = user_data.get("username", "utilisateur")
+                    print(f"✅ Session chargée pour @{username} depuis {session_file}")
                     
-                    print(f"✅ Session existante chargée pour @{username}")
                     self.session_data = session_data
                     
-                    # Restaurer cookies
                     cookies = session_data.get("cookies", {})
                     for name, value in cookies.items():
                         self.auth.session.cookies.set(name, value)
                     
-                    # Initialiser API
+                    # Initialiser API avec session chargée
                     auth_token = session_data.get("authorization_data", {}).get("authorization_header", "") or session_data.get("authorization", "")
                     user_id = user_data.get("user_id", "") or session_data.get("account_id", "")
 
@@ -317,62 +316,111 @@ class InstagramClient:
                     
                     return session_data
                 else:
-                    # Extraire username pour affichage
                     user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
-                    username = user_data.get("username", "user")
-                    print(f"⚠️ Session expirée pour @{username}")
+                    username = user_data.get("username", "utilisateur")
+                    print(f"⚠️ Session expirée pour @{username} dans {session_file}")
         
         except Exception as e:
-            pass
+            print(f"⚠️ Erreur lecture session {session_file}: {e}")
         
         return {}
     
-    def dump_session(self, session_file: str, username: str = None) -> dict:
+    def dump_session(self, session_file: str = None) -> dict:
         """
-        Sauvegarder la session dans un fichier spécifique
+        Sauvegarder la session actuelle dans un fichier spécifique
         
         Args:
             session_file (str): Chemin complet vers le fichier de session
-                              Ex: "kenny_session.json" ou "sessions/kenny_ig.json"
-            username (str, optional): Username pour la session. Si None, récupéré depuis session_data
+                               Si None, utilise le username actuel avec suffixe par défaut
+                               Exemples: "kenny_session.json", "./data/kenny_account.json"
         
         Returns:
-            dict: Données de session sauvegardées
+            dict: Données de session sauvegardées ou {} si échec
         """
-        if not username and self.session_data:
-            # Récupérer username depuis session_data
-            user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
-            username = user_data.get("username") or self.session_data.get("account_username")
-
-        if username and self.session_data:
-            user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
+        try:
+            if not self.session_data:
+                print("❌ Aucune session active à sauvegarder")
+                return {}
             
-            # Créer le répertoire si nécessaire
+            # Si pas de fichier spécifié, utiliser le username avec suffixe par défaut
+            if not session_file:
+                user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
+                username = user_data.get("username") or self.session_data.get("account_username", "user")
+                session_file = f"{username}_session.json"
+            
+            # Créer le répertoire parent s'il n'existe pas
             session_dir = os.path.dirname(session_file)
             if session_dir and not os.path.exists(session_dir):
                 os.makedirs(session_dir, exist_ok=True)
             
-            # Utiliser _save_session_custom avec le fichier spécifié
-            self._save_session_custom(session_file, self.session_data, user_data)
-            print(f"✅ Session sauvegardée dans: {session_file}")
+            # Extraire username pour la sauvegarde
+            user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
+            username = user_data.get("username") or self.session_data.get("account_username", "user")
+            
+            # Utiliser la méthode de sauvegarde existante mais avec fichier personnalisé
+            self._save_session_to_file(session_file, self.session_data, user_data)
+            
+            print(f"✅ Session sauvegardée pour @{username} dans {session_file}")
             return self.session_data
+            
+        except Exception as e:
+            print(f"❌ Erreur sauvegarde session: {e}")
+            return {}
 
-        return {}
-    def _save_session_custom(self, session_file: str, session_data: dict, user_data: dict):
+    def load_multiple_sessions(self, pattern: str) -> dict:
         """
-        Sauvegarder session dans un fichier personnalisé
+        Charger plusieurs sessions selon un pattern
         
         Args:
-            session_file (str): Chemin complet vers le fichier
-            session_data (dict): Données de session
-            user_data (dict): Données utilisateur
+            pattern (str): Pattern de fichiers à charger
+                          Exemples: "*_session.json", "accounts/*.json", "sessions/kenny_*.json"
+        
+        Returns:
+            dict: {username: session_data} pour chaque session trouvée
         """
+        import glob
+        
+        sessions = {}
+        
         try:
-            # Extraire username
-            username = user_data.get("username", "user")
+            matching_files = glob.glob(pattern)
             
-            if not user_data.get("username"):
-                user_data["username"] = username
+            for session_file in matching_files:
+                try:
+                    with open(session_file, 'r', encoding='utf-8') as f:
+                        session_data = json.load(f)
+                    
+                    created_at = session_data.get("created_at") or session_data.get("last_login") or session_data.get("session_created", 0)
+                    
+                    if time.time() - created_at < 7 * 24 * 3600:  # 7 jours
+                        user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
+                        username = user_data.get("username", os.path.basename(session_file).split('_')[0])
+                        
+                        sessions[username] = {
+                            "session_data": session_data,
+                            "file_path": session_file
+                        }
+                        print(f"✅ Session trouvée: @{username} ({session_file})")
+                    else:
+                        user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
+                        username = user_data.get("username", "inconnu")
+                        print(f"⚠️ Session expirée ignorée: @{username} ({session_file})")
+                        
+                except Exception as e:
+                    print(f"⚠️ Erreur lecture {session_file}: {e}")
+                    continue
+            
+            print(f"📊 {len(sessions)} sessions valides trouvées")
+            return sessions
+            
+        except Exception as e:
+            print(f"❌ Erreur chargement multiple: {e}")
+            return {}
+
+    def _save_session_to_file(self, session_file: str, session_data: dict, user_data: dict):
+        """Sauvegarder session dans un fichier spécifique (méthode interne)"""
+        try:
+            username = user_data.get("username", "user")
             
             # Format session instagrapi complet
             instagrapi_session = {
@@ -463,7 +511,41 @@ class InstagramClient:
                 json.dump(instagrapi_session, f, indent=2, ensure_ascii=False)
         
         except Exception as e:
-            pass
+            raise Exception(f"Erreur sauvegarde: {e}")
+
+    # Méthodes de compatibilité pour l'ancien système (optionnelles)
+    def load_session_by_username(self, username: str, session_suffix: str = "_session.json") -> dict:
+        """
+        Charger session par username avec suffixe personnalisé
+        
+        Args:
+            username (str): Nom d'utilisateur
+            session_suffix (str): Suffixe du fichier (défaut: "_session.json")
+        
+        Returns:
+            dict: Données de session
+        """
+        session_file = f"{username}{session_suffix}"
+        return self.load_session(session_file)
+
+    def dump_session_with_suffix(self, session_suffix: str = "_session.json") -> dict:
+        """
+        Sauvegarder avec suffixe personnalisé
+        
+        Args:
+            session_suffix (str): Suffixe du fichier (défaut: "_session.json")
+        
+        Returns:
+            dict: Données de session sauvegardées
+        """
+        if not self.session_data:
+            return {}
+        
+        user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
+        username = user_data.get("username") or self.session_data.get("account_username", "user")
+        session_file = f"{username}{session_suffix}"
+        
+        return self.dump_session(session_file)
     
     def get_x_mid(self) -> str:
         """Récupérer x-mid depuis le device manager"""
