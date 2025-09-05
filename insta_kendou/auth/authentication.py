@@ -947,12 +947,17 @@ class InstagramAuth:
         """Extraire message d'erreur de la réponse"""
         response_str = str(response_data)
         
-        if "n\\u2019avons pas trouv\\u00e9 votre compte" in response_str or "Nous n'avons pas trouvé votre compte" in response_str or "un nouveau compte" in response_str or "rifiez votr  nom de profil" in response_str :
+        if ("n\\u2019avons pas trouv\\u00e9 votre compte" in response_str or 
+            "Nous n'avons pas trouvé votre compte" in response_str or 
+            ("un nouveau compte" in response_str and "rifiez votr  nom de profil" in response_str)):
             return "user_not_found"
         elif "Ces infos de connexion n\\u2019ont pas fonctionn\\u00e9" in response_str or "Ces infos de connexion n'ont pas fonctionné" in response_str:
-            return "invalid_credentials"  
+            return "invalid_credentials"
+        elif "Connexion impossible" in response_str or "Une erreur inattendue s\\u2019est produite" in response_str or "Une erreur inattendue s'est produite" in response_str or "Veuillez essayer de vous reconnecter" in response_str:
+            return "connection_error"
         elif "Mot de passe incorrect" in response_str or "mot de passe incorrect" in response_str.lower():
             return "password_incorrect"
+        
         elif "challenge_required" in response_str.lower():
             return "challenge_required"
         elif "checkpoint_required" in response_str.lower():
