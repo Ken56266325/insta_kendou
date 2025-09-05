@@ -740,16 +740,245 @@ class InstagramAuth:
 
         return session_data
 
-    def _save_session_fixed(self, username: str, session_data: dict, user_data: dict):
-        """Sauvegarder session complète avec USERNAME"""
+    # -*- coding: utf-8 -*-
+"""
+Modifications à apporter dans client.py pour permettre le chemin personnalisé
+REMPLACER les méthodes existantes par celles-ci
+"""
+
+class InstagramClient:
+    """Client Instagram complet avec chemin de session personnalisable"""
+
+    def __init__(self, session_data: dict = None):
+        # Validation licence obligatoire
+        if not validate_license():
+            raise LicenseError("Ce script n'est pas autorisé à utiliser cette bibliothèque. Veuillez contacter le créateur via: 0389561802 ou https://t.me/Kenny5626")
+
+        self.auth = InstagramAuth()
+        self.session_data = session_data or {}
+        self.api = None
+
+        if session_data:
+            self.auth.session_data = session_data
+            # Restaurer cookies
+            if "cookies" in session_data:
+                for name, value in session_data["cookies"].items():
+                    self.auth.session.cookies.set(name, value)
+
+            # Initialiser API
+            user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
+            auth_token = session_data.get("authorization_data", {}).get("authorization_header", "") or session_data.get("authorization", "")
+            user_id = user_data.get("user_id", "") or session_data.get("account_id", "")
+
+            if user_id:
+                self.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token)
+
+    def load_session(self, session_file_path: str) -> dict:
+        """
+        Charger session depuis un fichier personnalisé
+        
+        Args:
+            session_file_path (str): Chemin complet vers le fichier de session
+                                   Ex: "my_sessions/account1.json"
+                                       "username_session.json"
+                                       "sessions/user_ig.json"
+        
+        Returns:
+            dict: Données de session si trouvées, {} sinon
+        """
         try:
-            os.makedirs("sessions", exist_ok=True)
+            if os.path.exists(session_file_path):
+                with open(session_file_path, 'r', encoding='utf-8') as f:
+                    session_data = json.load(f)
+                
+                created_at = session_data.get("created_at") or session_data.get("last_login") or session_data.get("session_created", 0)
+                
+                if time.time() - created_at < 7 * 24 * 3600:  # 7 jours
+                    self.session_data = session_data
+                    
+                    # Restaurer cookies dans la session
+                    cookies = session_data.get("cookies", {})
+                    for name, value in cookies.items():
+                        self.auth.session.cookies.set(name, value)
+                    
+                    # Initialiser API avec session chargée
+                    user_data = session_data.get("user_data", {}) or session_data.get("logged_in_user", {})
+                    auth_token = session_data.get("authorization_data", {}).get("authorization_header", "") or session_data.get("authorization", "")
+                    user_id = user_data.get("user_id", "") or session_data.get("account_id", "")
 
-            complete_filename = f"sessions/{username}_ig_complete.json"
+                    if user_id:
+                        self.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token)
+                    
+                    return session_data
+                else:
+                    print(f"⚠️ Session expirée dans {session_file_path}")
+        
+        except Exception as e:
+            print(f"⚠️ Erreur chargement session {session_file_path}: {e}")
+        
+        return {}
 
+    def dump_session(self, session_file_path: str) -> dict:
+        """
+        Sauvegarder la session actuelle dans un fichier personnalisé
+        
+        Args:
+            session_file_path (str): Chemin complet où sauvegarder la session
+                                   Ex: "my_sessions/account1.json"
+                                       "username_session.json" 
+                                       "data/sessions/user_ig.json"
+        
+        Returns:
+            dict: Données de session sauvegardées
+        """
+        try:
+            if not self.session_data:
+                print("❌ Aucune session active à sauvegarder")
+                return {}
+            
+            # Créer le dossier parent si nécessaire
+            parent_dir = os.path.dirname(session_file_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+            
+            # Récupérer username depuis session_data
+            user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
+            username = user_data.get("username") or self.session_data.get("account_username", "user_unknown")
+            
+            # Sauvegarder avec le nouveau chemin
+            self._save_session_to_path(session_file_path, self.session_data, user_data)
+            
+            print(f"✅ Session sauvegardée: {session_file_path}")
+            return self.session_data
+            
+        except Exception as e:
+            print(f"❌ Erreur sauvegarde session: {e}")
+            return {}
+
+    def _save_session_to_path(self, file_path: str, session_data: dict, user_data: dict):
+        """
+        Sauvegarder session vers un chemin spécifique
+        
+        Args:
+            file_path (str): Chemin complet du fichier
+            session_data (dict): Données de session
+            user_data (dict): Données utilisateur
+        """
+        try:
+            username = user_data.get("username", "user_unknown")
+            
             if not user_data.get("username"):
                 user_data["username"] = username
+            
+            # Format session instagrapi complet
+            instagrapi_session = {
+                "uuids": {
+                    "phone_id": str(uuid.uuid4()),
+                    "uuid": self.auth.device_manager.device_info['device_uuid'],
+                    "client_session_id": str(uuid.uuid4()),
+                    "advertising_id": str(uuid.uuid4()),
+                    "device_id": self.auth.device_manager.device_info['android_id']
+                },
+                "cookies": session_data.get("cookies", {}),
+                "last_login": session_data.get("created_at", int(time.time())),
+                "device_settings": {
+                    "cpu": "h1",
+                    "dpi": f"{self.auth.device_manager.device_info.get('screen_density', 320)}dpi",
+                    "model": self.auth.device_manager.device_info.get('model', 'SM-G991B'),
+                    "device": self.auth.device_manager.device_info.get('device', 'z3q'),
+                    "resolution": f"{self.auth.device_manager.device_info.get('screen_width', 900)}x{self.auth.device_manager.device_info.get('screen_height', 1600)}",
+                    "app_version": "394.0.0.46.81",
+                    "manufacturer": self.auth.device_manager.device_info.get('manufacturer', 'samsung'),
+                    "version_code": "779659870",
+                    "android_release": self.auth.device_manager.device_info.get('android_version', '12'),
+                    "android_version": int(self.auth.device_manager.device_info.get('sdk_version', 32))
+                },
+                "user_agent": self.auth.device_manager.device_info.get('user_agent', ''),
+                "country": "MG",
+                "country_code": 261,
+                "locale": "fr_FR", 
+                "timezone_offset": 10800,
+                
+                "authorization_data": {
+                    "ds_user_id": user_data.get("user_id", ""),
+                    "sessionid": session_data.get("sessionid", ""),
+                    "should_use_header_over_cookies": True,
+                    "authorization_header": session_data.get("authorization", ""),
+                    "username": user_data.get("username", username)
+                },
+                
+                "ig_headers": session_data.get("ig_headers", {}),
+                "user_data": {
+                    "user_id": user_data.get("user_id", ""),
+                    "username": user_data.get("username", username),
+                    "full_name": user_data.get("full_name", ""),
+                    "is_verified": user_data.get("is_verified", False),
+                    "is_private": user_data.get("is_private", False),
+                    "profile_pic_url": user_data.get("profile_pic_url", ""),
+                    "is_business": user_data.get("is_business", False)
+                },
+                "session_created": session_data.get("created_at", int(time.time())),
+                
+                "logged_in_user": {
+                    "user_id": user_data.get("user_id", ""),
+                    "username": user_data.get("username", username),
+                    "full_name": user_data.get("full_name", ""),
+                    "is_verified": user_data.get("is_verified", False),
+                    "is_private": user_data.get("is_private", False),
+                    "profile_pic_url": user_data.get("profile_pic_url", ""),
+                    "is_business": user_data.get("is_business", False),
+                    "phone_number": user_data.get("phone_number", ""),
+                    "country_code": user_data.get("country_code", ""),
+                    "national_number": user_data.get("national_number", "")
+                },
+                "account_id": user_data.get("user_id", ""),
+                "account_username": user_data.get("username", username),
+                "rank_token": f"{user_data.get('user_id', '')}_{uuid.uuid4()}",
+                "csrf_token": "missing",
+                
+                "session_metadata": {
+                    "login_timestamp": int(time.time()),
+                    "session_start_time": time.time(),
+                    "pigeon_session_id": f"UFS-{uuid.uuid4()}-0",
+                    "conn_uuid_client": str(uuid.uuid4()).replace('-', ''),
+                    "bandwidth_test_data": {
+                        "speed_kbps": random.uniform(2000, 5000),
+                        "total_bytes": random.randint(1000000, 10000000),
+                        "total_time_ms": random.randint(500, 2000)
+                    },
+                    "salt_ids": [332011630, random.randint(220140000, 220150000)],
+                    "bloks_version_id": "e061cacfa956f06869fc2b678270bef1583d2480bf51f508321e64cfb5cc12bd"
+                }
+            }
+            
+            if session_data.get("sessionid"):
+                instagrapi_session["cookies"]["sessionid"] = session_data["sessionid"]
+                instagrapi_session["cookies"]["ds_user_id"] = user_data.get("user_id", "")
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(instagrapi_session, f, indent=2, ensure_ascii=False)
+        
+        except Exception as e:
+            print(f"❌ Erreur sauvegarde: {e}")
 
+# AUSSI MODIFIER dans auth/authentication.py la méthode _save_session_fixed:
+class InstagramAuth:
+    # ... autres méthodes ...
+    
+    def _save_session_fixed(self, username: str, session_data: dict, user_data: dict):
+        """
+        Sauvegarder session - MÉTHODE MODIFIÉE pour compatibilité
+        Cette méthode est maintenant appelée uniquement par le système d'auth interne
+        """
+        try:
+            # Créer le dossier sessions par défaut seulement si utilisé en interne
+            os.makedirs("sessions", exist_ok=True)
+            
+            complete_filename = f"sessions/{username}_ig_complete.json"
+            
+            if not user_data.get("username"):
+                user_data["username"] = username
+            
             # Format session instagrapi complet AVEC USERNAME
             instagrapi_session = {
                 "uuids": {
@@ -776,9 +1005,9 @@ class InstagramAuth:
                 "user_agent": self.device_manager.device_info.get('user_agent', ''),
                 "country": "MG",
                 "country_code": 261,
-                "locale": "fr_FR",
+                "locale": "fr_FR", 
                 "timezone_offset": 10800,
-
+                
                 "authorization_data": {
                     "ds_user_id": user_data.get("user_id", ""),
                     "sessionid": session_data.get("sessionid", ""),
@@ -786,7 +1015,7 @@ class InstagramAuth:
                     "authorization_header": session_data.get("authorization", ""),
                     "username": user_data.get("username", username)
                 },
-
+                
                 "ig_headers": session_data.get("ig_headers", {}),
                 "user_data": {
                     "user_id": user_data.get("user_id", ""),
@@ -798,7 +1027,7 @@ class InstagramAuth:
                     "is_business": user_data.get("is_business", False)
                 },
                 "session_created": session_data.get("created_at", int(time.time())),
-
+                
                 "logged_in_user": {
                     "user_id": user_data.get("user_id", ""),
                     "username": user_data.get("username", username),
@@ -815,7 +1044,7 @@ class InstagramAuth:
                 "account_username": user_data.get("username", username),
                 "rank_token": f"{user_data.get('user_id', '')}_{uuid.uuid4()}",
                 "csrf_token": "missing",
-
+                
                 "session_metadata": {
                     "login_timestamp": int(time.time()),
                     "session_start_time": time.time(),
@@ -830,14 +1059,14 @@ class InstagramAuth:
                     "bloks_version_id": "e061cacfa956f06869fc2b678270bef1583d2480bf51f508321e64cfb5cc12bd"
                 }
             }
-
+            
             if session_data.get("sessionid"):
                 instagrapi_session["cookies"]["sessionid"] = session_data["sessionid"]
                 instagrapi_session["cookies"]["ds_user_id"] = user_data.get("user_id", "")
-
+            
             with open(complete_filename, 'w', encoding='utf-8') as f:
                 json.dump(instagrapi_session, f, indent=2, ensure_ascii=False)
-
+            
             # Supprimer l'ancien fichier simple s'il existe
             simple_filename = f"sessions/{username}_ig.json"
             if os.path.exists(simple_filename):
@@ -845,107 +1074,9 @@ class InstagramAuth:
                     os.remove(simple_filename)
                 except:
                     pass
-
+        
         except Exception as e:
             pass
-    def _save_session_to_file(self, filename: str, session_data: dict, user_data: dict):
-        """Sauvegarder session vers un fichier spécifique"""
-        try:
-            # Utiliser la même logique que _save_session_fixed mais avec fichier personnalisé
-            if not user_data.get("username"):
-                user_data["username"] = "user_from_session"
-
-            # Format session instagrapi complet
-            instagrapi_session = {
-                "uuids": {
-                    "phone_id": str(uuid.uuid4()),
-                    "uuid": self.device_manager.device_info['device_uuid'],
-                    "client_session_id": str(uuid.uuid4()),
-                    "advertising_id": str(uuid.uuid4()),
-                    "device_id": self.device_manager.device_info['android_id']
-                },
-                "cookies": session_data.get("cookies", {}),
-                "last_login": session_data.get("created_at", int(time.time())),
-                "device_settings": {
-                    "cpu": "h1",
-                    "dpi": f"{self.device_manager.device_info.get('screen_density', 320)}dpi",
-                    "model": self.device_manager.device_info.get('model', 'SM-G991B'),
-                    "device": self.device_manager.device_info.get('device', 'z3q'),
-                    "resolution": f"{self.device_manager.device_info.get('screen_width', 900)}x{self.device_manager.device_info.get('screen_height', 1600)}",
-                    "app_version": "394.0.0.46.81",
-                    "manufacturer": self.device_manager.device_info.get('manufacturer', 'samsung'),
-                    "version_code": "779659870",
-                    "android_release": self.device_manager.device_info.get('android_version', '12'),
-                    "android_version": int(self.device_manager.device_info.get('sdk_version', 32))
-                },
-                "user_agent": self.device_manager.device_info.get('user_agent', ''),
-                "country": "MG",
-                "country_code": 261,
-                "locale": "fr_FR",
-                "timezone_offset": 10800,
-
-                "authorization_data": {
-                    "ds_user_id": user_data.get("user_id", ""),
-                    "sessionid": session_data.get("sessionid", ""),
-                    "should_use_header_over_cookies": True,
-                    "authorization_header": session_data.get("authorization", ""),
-                    "username": user_data.get("username", "")
-                },
-
-                "ig_headers": session_data.get("ig_headers", {}),
-                "user_data": {
-                    "user_id": user_data.get("user_id", ""),
-                    "username": user_data.get("username", ""),
-                    "full_name": user_data.get("full_name", ""),
-                    "is_verified": user_data.get("is_verified", False),
-                    "is_private": user_data.get("is_private", False),
-                    "profile_pic_url": user_data.get("profile_pic_url", ""),
-                    "is_business": user_data.get("is_business", False)
-                },
-                "session_created": session_data.get("created_at", int(time.time())),
-
-                "logged_in_user": {
-                    "user_id": user_data.get("user_id", ""),
-                    "username": user_data.get("username", ""),
-                    "full_name": user_data.get("full_name", ""),
-                    "is_verified": user_data.get("is_verified", False),
-                    "is_private": user_data.get("is_private", False),
-                    "profile_pic_url": user_data.get("profile_pic_url", ""),
-                    "is_business": user_data.get("is_business", False),
-                    "phone_number": user_data.get("phone_number", ""),
-                    "country_code": user_data.get("country_code", ""),
-                    "national_number": user_data.get("national_number", "")
-                },
-                "account_id": user_data.get("user_id", ""),
-                "account_username": user_data.get("username", ""),
-                "rank_token": f"{user_data.get('user_id', '')}_{uuid.uuid4()}",
-                "csrf_token": "missing",
-
-                "session_metadata": {
-                    "login_timestamp": int(time.time()),
-                    "session_start_time": time.time(),
-                    "pigeon_session_id": f"UFS-{uuid.uuid4()}-0",
-                    "conn_uuid_client": str(uuid.uuid4()).replace('-', ''),
-                    "bandwidth_test_data": {
-                        "speed_kbps": random.uniform(2000, 5000),
-                        "total_bytes": random.randint(1000000, 10000000),
-                        "total_time_ms": random.randint(500, 2000)
-                    },
-                    "salt_ids": [332011630, random.randint(220140000, 220150000)],
-                    "bloks_version_id": "e061cacfa956f06869fc2b678270bef1583d2480bf51f508321e64cfb5cc12bd"
-                }
-            }
-
-            if session_data.get("sessionid"):
-                instagrapi_session["cookies"]["sessionid"] = session_data["sessionid"]
-                instagrapi_session["cookies"]["ds_user_id"] = user_data.get("user_id", "")
-
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(instagrapi_session, f, indent=2, ensure_ascii=False)
-
-        except Exception as e:
-            print(f"❌ Erreur sauvegarde fichier {filename}: {e}")
-
 
     def check_account_status_after_login(self, username: str, password: str, login_response: dict) -> dict:
         """Vérifier le statut du compte après la connexion"""
