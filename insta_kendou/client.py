@@ -276,30 +276,29 @@ class InstagramClient:
         """Connexion Instagram avec gestion 2FA complète"""
         return self.auth.login(username, password)
 
-    def load_session(self, session_file_path: str) -> dict:
+    def load_session(self, session_file: str) -> dict:
         """
         Charger session depuis un fichier personnalisé
         
         Args:
-            session_file_path (str): Chemin complet vers le fichier de session
-                                   Ex: "my_sessions/account1.json"
-                                       "username_session.json"
-                                       "sessions/user_ig.json"
+            session_file (str): Chemin complet vers le fichier de session
+                              Exemple: "data/user1_session.json" ou "sessions/kenny_ig.json"
         
         Returns:
-            dict: Données de session si trouvées, {} sinon
+            dict: Données de session ou dict vide si échec
         """
         try:
-            if os.path.exists(session_file_path):
-                with open(session_file_path, 'r', encoding='utf-8') as f:
+            if os.path.exists(session_file):
+                with open(session_file, 'r', encoding='utf-8') as f:
                     session_data = json.load(f)
                 
+                # Vérifier l'âge de la session (7 jours max)
                 created_at = session_data.get("created_at") or session_data.get("last_login") or session_data.get("session_created", 0)
                 
-                if time.time() - created_at < 7 * 24 * 3600:  # 7 jours
+                if time.time() - created_at < 7 * 24 * 3600:
                     self.session_data = session_data
                     
-                    # Restaurer cookies dans la session
+                    # Restaurer cookies
                     cookies = session_data.get("cookies", {})
                     for name, value in cookies.items():
                         self.auth.session.cookies.set(name, value)
@@ -311,67 +310,70 @@ class InstagramClient:
 
                     if user_id:
                         self.api = InstagramAPI(self.auth.session, self.auth.device_manager.device_info, user_id, auth_token)
+
+                    # Extraire le username depuis le fichier pour affichage
+                    username = user_data.get("username") or session_data.get("account_username", "utilisateur")
                     
                     return session_data
                 else:
-                    print(f"⚠️ Session expirée dans {session_file_path}")
+                    # Session expirée
+                    return {}
         
         except Exception as e:
-            print(f"⚠️ Erreur chargement session {session_file_path}: {e}")
+            pass
         
         return {}
 
-
-    def dump_session(self, session_file_path: str) -> dict:
+    def dump_session(self, session_file: str, username: str = None) -> dict:
         """
         Sauvegarder la session actuelle dans un fichier personnalisé
         
         Args:
-            session_file_path (str): Chemin complet où sauvegarder la session
-                                   Ex: "my_sessions/account1.json"
-                                       "username_session.json" 
-                                       "data/sessions/user_ig.json"
+            session_file (str): Chemin complet où sauvegarder la session
+                              Exemple: "accounts/kenny_session.json" ou "data/{username}_ig.json"
+            username (str, optional): Username pour remplacer {username} dans session_file
         
         Returns:
-            dict: Données de session sauvegardées
+            dict: Données de session sauvegardées ou dict vide si échec
         """
         try:
             if not self.session_data:
-                print("❌ Aucune session active à sauvegarder")
                 return {}
             
-            # Créer le dossier parent si nécessaire
-            parent_dir = os.path.dirname(session_file_path)
+            # Récupérer username depuis session si pas fourni
+            if not username:
+                user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
+                username = user_data.get("username") or self.session_data.get("account_username", "user")
+            
+            # Remplacer {username} dans le chemin si présent
+            final_session_file = session_file.replace("{username}", username)
+            
+            # Créer le répertoire parent si nécessaire
+            parent_dir = os.path.dirname(final_session_file)
             if parent_dir and not os.path.exists(parent_dir):
                 os.makedirs(parent_dir, exist_ok=True)
             
-            # Récupérer username depuis session_data
+            # Extraire user_data pour la sauvegarde
             user_data = self.session_data.get("user_data", {}) or self.session_data.get("logged_in_user", {})
-            username = user_data.get("username") or self.session_data.get("account_username", "user_unknown")
             
-            # Sauvegarder avec le nouveau chemin
-            self._save_session_to_path(session_file_path, self.session_data, user_data)
+            # Utiliser la méthode interne de sauvegarde
+            self._save_session_to_file(final_session_file, self.session_data, user_data)
             
-            print(f"✅ Session sauvegardée: {session_file_path}")
             return self.session_data
             
         except Exception as e:
-            print(f"❌ Erreur sauvegarde session: {e}")
             return {}
-    def _save_session_to_path(self, file_path: str, session_data: dict, user_data: dict):
+    def _save_session_to_file(self, session_file: str, session_data: dict, user_data: dict):
         """
-        Sauvegarder session vers un chemin spécifique
+        Sauvegarder session dans un fichier spécifique (méthode interne)
         
         Args:
-            file_path (str): Chemin complet du fichier
+            session_file (str): Chemin complet du fichier
             session_data (dict): Données de session
             user_data (dict): Données utilisateur
         """
         try:
-            username = user_data.get("username", "user_unknown")
-            
-            if not user_data.get("username"):
-                user_data["username"] = username
+            username = user_data.get("username", "user")
             
             # Format session instagrapi complet
             instagrapi_session = {
@@ -454,16 +456,17 @@ class InstagramClient:
                 }
             }
             
+            # Ajouter sessionid aux cookies si présent
             if session_data.get("sessionid"):
                 instagrapi_session["cookies"]["sessionid"] = session_data["sessionid"]
                 instagrapi_session["cookies"]["ds_user_id"] = user_data.get("user_id", "")
             
-            with open(file_path, 'w', encoding='utf-8') as f:
+            # Sauvegarder dans le fichier spécifié
+            with open(session_file, 'w', encoding='utf-8') as f:
                 json.dump(instagrapi_session, f, indent=2, ensure_ascii=False)
-        
+                
         except Exception as e:
-            print(f"❌ Erreur sauvegarde: {e}")
-
+            pass
 
     def get_x_mid(self) -> str:
         """Récupérer x-mid depuis le device manager"""
