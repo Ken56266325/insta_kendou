@@ -36,7 +36,7 @@ class InstagramAPI:
         return self.url_resolver.extract_media_id_from_url(url)
     
     def extract_user_id_from_url(self, url: str) -> str:
-        """Extraire user ID depuis URL de profil - CORRIGÉ avec recherche similaire"""
+        """Extraire user ID depuis URL de profil - LOGIQUE SIMPLIFIÉE"""
         try:
             # D'abord résoudre les liens courts
             resolved_url = self.url_resolver.resolve_short_url(url)
@@ -46,17 +46,67 @@ class InstagramAPI:
             if match:
                 username = match.group(1).replace('@', '').strip()
                 
-                # Utiliser la recherche similaire EXACTEMENT comme script original
-                user_id = self._search_similar_username(username)
-                return user_id
+                # ÉTAPE 1: Tenter extraction directe via recherche API
+                user_id = self._direct_username_to_user_id(username)
+                if user_id:
+                    return user_id
+                
+                # ÉTAPE 2: Si échec, recherche similaire via API seulement
+                user_id = self._search_similar_username_api_only(username)
+                return user_id  # Peut être None si pas trouvé
             
             return None
             
         except Exception as e:
             return None
     
-    def _search_similar_username(self, target_username: str) -> str:
-        """Rechercher username similaire EXACTEMENT comme script original"""
+    def _direct_username_to_user_id(self, username: str) -> str:
+        """Extraction directe user ID via recherche API exacte"""
+        try:
+            headers = {
+                "user-agent": self.device_info['user_agent'],
+                "x-ig-app-id": "567067343352427",
+                "x-ig-android-id": self.device_info['android_id'],
+                "x-ig-device-id": self.device_info['device_uuid'],
+                "accept-language": "fr-FR, en-US",
+                "authorization": self.auth_token,
+            }
+            
+            search_params = {
+                "timezone_offset": "10800",
+                "q": username,
+                "count": "20"
+            }
+            
+            response = self.session.get(
+                "https://i.instagram.com/api/v1/users/search/",
+                params=search_params,
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    if data.get("status") == "ok" and "users" in data:
+                        users = data["users"]
+                        
+                        # Recherche EXACTE seulement
+                        for user in users:
+                            user_username = user.get("username", "").lower()
+                            if user_username == username.lower():
+                                return str(user.get("pk"))
+                
+                except Exception:
+                    pass
+            
+            return None
+            
+        except Exception:
+            return None
+    
+    def _search_similar_username_api_only(self, target_username: str) -> str:
+        """Rechercher username similaire via API seulement - PAS DE WEB"""
         try:
             headers = {
                 "user-agent": self.device_info['user_agent'],
@@ -86,69 +136,24 @@ class InstagramAPI:
                     if data.get("status") == "ok" and "users" in data:
                         users = data["users"]
                         
-                        # Recherche exacte d'abord
-                        for user in users:
-                            username = user.get("username", "").lower()
-                            if username == target_username.lower():
-                                user_id = str(user.get("pk"))
-                                return user_id
-                        
-                        # Si pas trouvé exact, recherche similaire EXACTEMENT comme script original
                         target_lower = target_username.lower()
                         best_matches = []
                         
-                        # Recherche par préfixe
+                        # Recherche par préfixe seulement
                         for user in users:
                             username = user.get("username", "").lower()
                             if username.startswith(target_lower) and username != target_lower:
                                 best_matches.append((user.get("pk"), username))
                         
+                        # Retourner le match le plus court (plus probable)
                         if best_matches:
                             best_matches.sort(key=lambda x: len(x[1]))
-                            user_id = str(best_matches[0][0])
-                            return user_id
-                        
-                        # Recherche par parties de nom EXACTEMENT comme script original
-                        for user in users:
-                            username = user.get("username", "").lower()
-                            if any(part in username for part in target_lower.split('_') + target_lower.split('.') if len(part) > 2):
-                                user_id = str(user.get("pk"))
-                                return user_id
+                            return str(best_matches[0][0])
                         
                 except Exception:
                     pass
             
-            # Si rien trouvé, utiliser fallback web
-            return self._username_to_user_id_web_fallback(target_username)
-            
-        except Exception:
-            return None
-    
-    def _username_to_user_id_web_fallback(self, username: str) -> str:
-        """Fallback web pour username -> user ID"""
-        try:
-            web_response = self.session.get(
-                f"https://www.instagram.com/{username}/",
-                headers={"user-agent": "Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36"},
-                timeout=10
-            )
-            
-            if web_response.status_code == 200:
-                content = InstagramEncryption.safe_decode_response(web_response)
-                
-                # Extraire user ID depuis le HTML
-                user_id_patterns = [
-                    r'"profilePage_([0-9]+)"',
-                    r'"user_id":"([0-9]+)"',
-                    r'"owner":{"id":"([0-9]+)"'
-                ]
-                
-                for pattern in user_id_patterns:
-                    match = re.search(pattern, content)
-                    if match:
-                        user_id = match.group(1)
-                        return user_id
-            
+            # Si rien trouvé via recherche similaire = utilisateur introuvable
             return None
             
         except Exception:
