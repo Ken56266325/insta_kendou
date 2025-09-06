@@ -544,6 +544,141 @@ class InstagramClient:
         
         return headers
     
+    def _generate_meta_zca(self) -> str:
+        """Générer x-meta-zca dynamique avec données réelles"""
+        import hashlib
+        import secrets
+        import base64
+        
+        try:
+            # Timestamp actuel
+            current_time = str(int(time.time() * 1000))
+            
+            # Générer hash unique basé sur timestamp + device + user
+            device_headers = self._get_device_specific_headers()
+            user_id = self._get_user_id_from_session()
+            hash_data = f"{current_time}{device_headers.get('x-ig-device-id', '')}{user_id}"
+            hash_value = hashlib.sha256(hash_data.encode()).digest()
+            hash_b64 = base64.b64encode(hash_value).decode()[:43]
+            
+            # Générer nonce aléatoire (24 caractères base64)
+            key_nonce = base64.b64encode(secrets.token_bytes(18)).decode()
+            
+            # Détecter niveau batterie réel ou simuler
+            battery_level = self._get_battery_level()
+            battery_status = self._get_battery_status()
+            
+            # Structure ZCA complète
+            zca_data = {
+                "android": {
+                    "aka": {
+                        "dataToSign": json.dumps({
+                            "time": current_time,
+                            "hash": hash_b64
+                        }, separators=(',', ':')),
+                        "keyNonce": key_nonce,
+                        "errors": ["KEYSTORE_TOKEN_RETRIEVAL_ERROR"]
+                    },
+                    "gpia": {
+                        "token": "",
+                        "errors": ["PLAY_INTEGRITY_DISABLED_BY_CONFIG"]
+                    },
+                    "payload": {
+                        "plugins": {
+                            "bat": {
+                                "sta": battery_status,
+                                "lvl": battery_level
+                            },
+                            "sct": {}
+                        }
+                    }
+                }
+            }
+            
+            # Encoder en base64
+            json_str = json.dumps(zca_data, separators=(',', ':'))
+            encoded = base64.b64encode(json_str.encode()).decode()
+            
+            return encoded
+            
+        except Exception as e:
+            # Fallback avec données minimales mais dynamiques
+            current_time = str(int(time.time() * 1000))
+            hash_fallback = hashlib.sha256(f"{current_time}{random.randint(1000, 9999)}".encode()).hexdigest()[:43]
+            
+            fallback_data = {
+                "android": {
+                    "aka": {
+                        "dataToSign": f'{{"time":"{current_time}","hash":"{hash_fallback}"}}',
+                        "keyNonce": base64.b64encode(secrets.token_bytes(18)).decode(),
+                        "errors": ["KEYSTORE_TOKEN_RETRIEVAL_ERROR"]
+                    },
+                    "gpia": {
+                        "token": "",
+                        "errors": ["PLAY_INTEGRITY_DISABLED_BY_CONFIG"]
+                    },
+                    "payload": {
+                        "plugins": {
+                            "bat": {
+                                "sta": "Unplugged",
+                                "lvl": random.randint(20, 95)
+                            },
+                            "sct": {}
+                        }
+                    }
+                }
+            }
+            
+            json_str = json.dumps(fallback_data, separators=(',', ':'))
+            return base64.b64encode(json_str.encode()).decode()
+    
+    def _get_battery_level(self) -> int:
+        """Obtenir niveau batterie réel du système ou simuler"""
+        try:
+            # Tenter lecture batterie Linux/Android
+            if os.path.exists("/sys/class/power_supply/BAT0/capacity"):
+                with open("/sys/class/power_supply/BAT0/capacity", "r") as f:
+                    return int(f.read().strip())
+            elif os.path.exists("/sys/class/power_supply/BAT1/capacity"):
+                with open("/sys/class/power_supply/BAT1/capacity", "r") as f:
+                    return int(f.read().strip())
+            else:
+                # Simulation réaliste basée sur l'heure
+                hour = datetime.now().hour
+                if 6 <= hour <= 12:  # Matin - batterie élevée
+                    return random.randint(75, 95)
+                elif 12 <= hour <= 18:  # Après-midi - batterie moyenne
+                    return random.randint(45, 80)
+                else:  # Soir/nuit - batterie plus faible
+                    return random.randint(20, 60)
+        except:
+            return random.randint(25, 90)
+    
+    def _get_battery_status(self) -> str:
+        """Obtenir status batterie réel ou simuler"""
+        try:
+            # Tenter lecture status Linux/Android
+            if os.path.exists("/sys/class/power_supply/BAT0/status"):
+                with open("/sys/class/power_supply/BAT0/status", "r") as f:
+                    status = f.read().strip().lower()
+                    if "charging" in status:
+                        return "Charging"
+                    elif "full" in status:
+                        return "Full"
+                    else:
+                        return "Unplugged"
+            else:
+                # Simulation réaliste
+                battery_level = self._get_battery_level()
+                if battery_level >= 95:
+                    return random.choice(["Full", "Unplugged"])
+                elif battery_level <= 25:
+                    return random.choice(["Charging", "Unplugged"])
+                else:
+                    return random.choice(["Unplugged", "Unplugged", "Charging"])  # Plus probable unplugged
+        except:
+            return random.choice(["Unplugged", "Charging", "Full"])
+    
     def _build_complete_headers(self, endpoint: str = "", friendly_name: str = "") -> dict:
         """Construire headers complets avec toutes les données de session"""
         user_id = self._get_user_id_from_session()
@@ -654,10 +789,8 @@ class InstagramClient:
             "x-zero-f-device-id": family_device_id or ""
         })
         
-        # Meta ZCA depuis session si disponible
-        session_meta = self.session_data.get("session_metadata", {})
-        # Générer meta-zca basique
-        headers["x-meta-zca"] = "eyJhbmRyb2lkIjp7ImFrYSI6eyJkYXRhVG9TaWduIjoie1widGltZVwiOlwiMTc1NzEzMzMxOTAzNFwiLFwiaGFzaFwiOlwiZ3dibUlsdUFoLXFIcFFIMEdEV0x0eEVwZ2NMeXI2RENLemQ4UUdGdzVQQVwifSIsImtleU5vbmNlIjoiQk93WXlWMXhHdW1lNXpEOHBLWGtoQTdDVE1FcXRpZ2wiLCJlcnJvcnMiOlsiS0VZU1RPUkVfVE9LRU5fUkVUUklFVkFMX0VSUk9SIl19LCJncGlhIjp7InRva2VuIjoiIiwiZXJyb3JzIjpbIlBMQVlfSU5URUdSSVRZX0RJU0FCTEVEX0JZX0NPTkZJRyJdfSwicGF5bG9hZCI6eyJwbHVnaW5zIjp7ImJhdCI6eyJzdGEiOiJVbnBsdWdnZWQiLCJsdmwiOjkwfSwic2N0Ijp7fX19fX0"
+        # Générer Meta ZCA dynamique avec données réelles
+        headers["x-meta-zca"] = self._generate_meta_zca()
         
         return headers
     
@@ -991,7 +1124,7 @@ class InstagramClient:
             return {"success": False, "error": "Ce media a ete supprime"}
     
     def _comment_post_internal(self, media_input: str, comment_text: str) -> dict:
-        """Commenter un post Instagram (méthode interne) - AVEC PROCESS COMPLET"""
+        """Commenter un post Instagram (méthode interne) - AVEC PROCESS COMPLET CORRIGÉ"""
         try:
             if self.api:
                 media_id = self.api.extract_media_id_from_url(media_input)
@@ -1005,7 +1138,7 @@ class InstagramClient:
             if not user_id:
                 return {"success": False, "error": "User ID non trouvé dans la session"}
             
-            # ÉTAPE 1: Check offensive comment (comme dans l'exemple)
+            # ÉTAPE 1: Check offensive comment (OBLIGATOIRE)
             comment_session_id = str(uuid.uuid4())
             
             check_data = {
@@ -1023,6 +1156,7 @@ class InstagramClient:
                 friendly_name="IgApi: media/comment/check_offensive_comment/"
             )
             
+            # VÉRIFICATION OBLIGATOIRE
             check_response = self.auth.session.post(
                 "https://i-fallback.instagram.com/api/v1/media/comment/check_offensive_comment/",
                 headers=headers_check,
@@ -1030,22 +1164,34 @@ class InstagramClient:
                 timeout=10
             )
             
-            # Continuer même si check échoue
+            # ARRÊTER SI CHECK ÉCHOUE
+            if check_response.status_code != 200:
+                return {"success": False, "error": "Échec vérification commentaire"}
             
-            # ÉTAPE 2: Post comment avec tous les paramètres
+            try:
+                check_result = check_response.json()
+                if check_result.get("is_offensive", False):
+                    return {"success": False, "error": "Commentaire détecté comme offensant"}
+                if check_result.get("status") != "ok":
+                    return {"success": False, "error": "Vérification commentaire échouée"}
+            except:
+                return {"success": False, "error": "Réponse check invalide"}
+            
+            # ÉTAPE 2: Post comment avec données exactes
             current_time = int(time.time())
+            comment_creation_key = str(uuid.uuid4())
             
-            # User breadcrumb calculé
+            # Calculer user_breadcrumb réel (timing utilisateur)
             breadcrumb_time = current_time * 1000 + 495
-            user_breadcrumb = f"2CtNlMTofPYazH1tAZYSrseuaWwzOznZW4XAcSF9W74=\\nMTAgNTY4OCAwIDE3NTcxMzM2NzY0OTU=\\n"
+            user_breadcrumb = self._generate_user_breadcrumb(comment_text, breadcrumb_time)
             
             comment_data = {
                 "include_media_code": "true",
                 "user_breadcrumb": user_breadcrumb,
                 "starting_clips_media_id": "null",
-                "comment_creation_key": str(uuid.uuid4()),
+                "comment_creation_key": comment_creation_key,
                 "delivery_class": "organic",
-                "idempotence_token": str(uuid.uuid4()),
+                "idempotence_token": comment_creation_key,  # Même que creation_key
                 "client_position": "0",
                 "carousel_child_mentions": "[]",
                 "include_e2ee_mentioned_user_list": "true",
@@ -1073,6 +1219,7 @@ class InstagramClient:
                 friendly_name=f"IgApi: media/{media_id}/comment/"
             )
             
+            # UTILISER i-fallback.instagram.com comme dans l'exemple
             response = self.auth.session.post(
                 f"https://i-fallback.instagram.com/api/v1/media/{media_id}/comment/",
                 headers=headers,
@@ -1098,7 +1245,29 @@ class InstagramClient:
                                             InstagramEncryption.safe_decode_response(response))
                 
         except Exception as e:
-            return {"success": False, "error": "Ce media a ete supprime"}
+            return {"success": False, "error": f"Erreur commentaire: {str(e)}"}
+    
+    def _generate_user_breadcrumb(self, comment_text: str, timestamp: int) -> str:
+        """Générer user_breadcrumb réaliste pour commentaire"""
+        import base64
+        
+        try:
+            # Simuler timing de frappe (longueur texte * délai moyen)
+            text_length = len(comment_text)
+            typing_time = text_length * random.randint(80, 150)  # ms par caractère
+            
+            # Données de breadcrumb (simulation timing réel)
+            breadcrumb_data = f"2CtNlMTofPYazH1tAZYSrseuaWwzOznZW4XAcSF9W74=\\nMTAgNTY4OCAwIDE3NTcxMzM2NzY0OTU=\\n"
+            
+            # Alternative : générer dynamiquement
+            base_data = base64.b64encode(f"timing_{timestamp}_{typing_time}".encode()).decode()
+            timing_data = base64.b64encode(f"10 5688 0 {timestamp}".encode()).decode()
+            
+            return f"{base_data}\\n{timing_data}\\n"
+            
+        except:
+            # Fallback avec timestamp actuel
+            return f"2CtNlMTofPYazH1tAZYSrseuaWwzOznZW4XAcSF9W74=\\nMTAgNTY4OCAwIDE3NTcxMzM2NzY0OTU=\\n"
     
     def _follow_user_internal(self, user_input: str) -> dict:
         """Suivre un utilisateur (méthode interne) - AVEC HEADERS COMPLETS"""
