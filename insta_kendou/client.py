@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Client principal Instagram pou insta_kendou
-Classe InstagramClient avec toutes les fonctionnalités complètes
+Client principal Instagram pour insta_kendou - VERSION AMÉLIORÉE
+Classe InstagramClient avec toutes les fonctionnalités complètes et headers exacts
 """
 
 import os
@@ -11,14 +11,11 @@ import uuid
 import random
 import urllib.parse
 import re
+import base64
+from datetime import datetime
 from .auth import InstagramAuth
 from .utils import DeviceManager, InstagramEncryption, MediaProcessor, URLResolver, validate_license
 from .exceptions import *
-
-# -*- coding: utf-8 -*-
-"""
-API Instagram corrigée pour le client - EXACTEMENT comme script original
-"""
 
 class InstagramAPI:
     """API Instagram pour extraire media ID et user ID (intégrée au client) - CORRIGÉE"""
@@ -109,7 +106,6 @@ class InstagramAPI:
                         if best_matches:
                             best_matches.sort(key=lambda x: len(x[1]))
                             user_id = str(best_matches[0][0])
-                            found_username = best_matches[0][1]
                             return user_id
                         
                         # Recherche par parties de nom EXACTEMENT comme script original
@@ -117,7 +113,6 @@ class InstagramAPI:
                             username = user.get("username", "").lower()
                             if any(part in username for part in target_lower.split('_') + target_lower.split('.') if len(part) > 2):
                                 user_id = str(user.get("pk"))
-                                found_username = user.get("username", "")
                                 return user_id
                         
                 except Exception:
@@ -376,6 +371,309 @@ class InstagramClient:
         
         return ""
     
+    def _get_bandwidth_test_data(self) -> dict:
+        """Récupérer données de test de bande passante depuis la session"""
+        session_meta = self.session_data.get("session_metadata", {})
+        bandwidth_data = session_meta.get("bandwidth_test_data", {})
+        
+        if bandwidth_data:
+            return {
+                "speed_kbps": str(int(bandwidth_data.get("speed_kbps", 2000))),
+                "total_bytes": str(bandwidth_data.get("total_bytes", 1000000)),
+                "total_time_ms": str(bandwidth_data.get("total_time_ms", 1000))
+            }
+        
+        # Valeurs par défaut
+        return {
+            "speed_kbps": "2000",
+            "total_bytes": "1000000", 
+            "total_time_ms": "1000"
+        }
+    
+    def _get_salt_ids(self) -> list:
+        """Récupérer salt IDs depuis la session"""
+        session_meta = self.session_data.get("session_metadata", {})
+        salt_ids = session_meta.get("salt_ids", [])
+        
+        if salt_ids and len(salt_ids) >= 2:
+            return salt_ids
+        
+        # Valeurs par défaut
+        return [220145826, 220140399]
+    
+    def _get_pigeon_session_id(self) -> str:
+        """Récupérer ou générer pigeon session ID"""
+        session_meta = self.session_data.get("session_metadata", {})
+        pigeon_id = session_meta.get("pigeon_session_id")
+        
+        if pigeon_id:
+            return pigeon_id
+        
+        # Générer nouveau
+        return f"UFS-{str(uuid.uuid4())}-1"
+    
+    def _get_conn_uuid_client(self) -> str:
+        """Récupérer ou générer conn uuid client"""
+        session_meta = self.session_data.get("session_metadata", {})
+        conn_uuid = session_meta.get("conn_uuid_client")
+        
+        if conn_uuid:
+            return conn_uuid
+        
+        # Générer nouveau
+        return str(uuid.uuid4()).replace('-', '')[:32]
+    
+    def _get_network_type(self) -> str:
+        """Détecter le type de réseau actuel"""
+        try:
+            import netifaces
+            interfaces = netifaces.interfaces()
+            
+            # Vérifier interfaces WiFi
+            for interface in interfaces:
+                if 'wlan' in interface.lower() or 'wifi' in interface.lower():
+                    addrs = netifaces.ifaddresses(interface)
+                    if netifaces.AF_INET in addrs:
+                        return "WIFI"
+            
+            # Vérifier interfaces cellulaires 
+            for interface in interfaces:
+                if any(x in interface.lower() for x in ['rmnet', 'mobile', 'cellular', 'ppp']):
+                    addrs = netifaces.ifaddresses(interface)
+                    if netifaces.AF_INET in addrs:
+                        return "CELLULAR"
+            
+            # Par défaut
+            return "WIFI"
+            
+        except ImportError:
+            # Si netifaces pas disponible, utiliser méthode basique
+            import socket
+            try:
+                # Tenter connexion pour détecter
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                s.close()
+                return "WIFI"  # Par défaut si connexion OK
+            except:
+                return "WIFI"
+    
+    def _get_radio_type(self) -> str:
+        """Obtenir type radio basé sur le réseau"""
+        network_type = self._get_network_type()
+        
+        if network_type == "WIFI":
+            return "wifi-none"
+        elif network_type == "CELLULAR":
+            return "lte"
+        else:
+            return "wifi-none"
+    
+    def _get_connection_type_headers(self) -> dict:
+        """Obtenir headers liés au type de connexion"""
+        network_type = self._get_network_type()
+        
+        return {
+            "x-fb-connection-type": network_type,
+            "x-ig-connection-type": network_type
+        }
+    
+    def _get_device_specific_headers(self) -> dict:
+        """Obtenir headers spécifiques au device depuis la session"""
+        device_settings = self.session_data.get("device_settings", {})
+        
+        if not device_settings:
+            # Fallback sur device_info
+            device_info = self.auth.device_manager.device_info
+            return {
+                "x-ig-android-id": device_info.get('android_id', ''),
+                "x-ig-device-id": device_info.get('device_uuid', ''),
+                "user-agent": device_info.get('user_agent', '')
+            }
+        
+        # Utiliser device_settings de la session
+        android_version = device_settings.get('android_version', 32)
+        android_release = device_settings.get('android_release', '12')
+        dpi = device_settings.get('dpi', '320dpi')
+        resolution = device_settings.get('resolution', '900x1600')
+        manufacturer = device_settings.get('manufacturer', 'samsung')
+        model = device_settings.get('model', 'SM-G991B')
+        device = device_settings.get('device', 'z3q')
+        app_version = device_settings.get('app_version', '394.0.0.46.81')
+        version_code = device_settings.get('version_code', '779659870')
+        
+        # Récupérer IDs depuis uuids
+        uuids = self.session_data.get("uuids", {})
+        android_id = uuids.get("device_id", "android-" + str(uuid.uuid4()).replace('-', '')[:16])
+        device_uuid = uuids.get("uuid", str(uuid.uuid4()))
+        
+        # Construire user agent
+        user_agent = f"Instagram {app_version} Android ({android_version}/{android_release}; {dpi}; {resolution}; {manufacturer}; {model}; {device}; exynos8895; fr_FR; {version_code})"
+        
+        return {
+            "x-ig-android-id": android_id,
+            "x-ig-device-id": device_uuid,
+            "user-agent": user_agent
+        }
+    
+    def _get_ig_headers(self) -> dict:
+        """Récupérer headers IG depuis la session"""
+        ig_headers = self.session_data.get("ig_headers", {})
+        
+        headers = {}
+        
+        # x-ig-www-claim
+        www_claim = ig_headers.get("x-ig-www-claim")
+        if www_claim:
+            headers["x-ig-www-claim"] = www_claim
+        
+        # ig-u-ds-user-id
+        user_id = self._get_user_id_from_session()
+        headers["ig-u-ds-user-id"] = user_id
+        headers["ig-intended-user-id"] = user_id
+        
+        # ig-u-rur
+        ig_u_rur = ig_headers.get("ig-u-rur")
+        if ig_u_rur:
+            headers["ig-u-rur"] = ig_u_rur
+        else:
+            # Générer ig-u-rur basique
+            timestamp = int(time.time() + 30 * 24 * 3600)  # 30 jours
+            random_hash = str(uuid.uuid4()).replace('-', '')[:40]
+            headers["ig-u-rur"] = f"LLA,{user_id},{timestamp}:01fe{random_hash}"
+        
+        return headers
+    
+    def _build_complete_headers(self, endpoint: str = "", friendly_name: str = "") -> dict:
+        """Construire headers complets avec toutes les données de session"""
+        user_id = self._get_user_id_from_session()
+        bandwidth_data = self._get_bandwidth_test_data()
+        salt_ids = self._get_salt_ids()
+        device_headers = self._get_device_specific_headers()
+        connection_headers = self._get_connection_type_headers()
+        ig_headers = self._get_ig_headers()
+        
+        # Headers de base
+        headers = {
+            "accept-language": "fr-FR, en-US",
+            "authorization": self._get_auth_token(),
+            "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "x-fb-client-ip": "True",
+            "x-fb-server-cluster": "True",
+            "priority": "u=3",
+            "x-ig-app-id": "567067343352427",
+            "x-ig-app-locale": "fr_FR",
+            "x-ig-device-locale": "fr_FR",
+            "x-ig-mapped-locale": "fr_FR",
+            "x-ig-timezone-offset": str(self.session_data.get("timezone_offset", 10800)),
+            "x-ig-capabilities": "3brTv10=",
+            "x-pigeon-rawclienttime": str(time.time()),
+            "x-pigeon-session-id": self._get_pigeon_session_id(),
+            "x-tigon-is-retry": "False",
+            "accept-encoding": "zstd",
+            "x-fb-http-engine": "Tigon/MNS/TCP",
+            "x-fb-conn-uuid-client": self._get_conn_uuid_client()
+        }
+        
+        # Ajouter headers spécifiques au device
+        headers.update(device_headers)
+        
+        # Ajouter headers de connexion
+        headers.update(connection_headers)
+        
+        # Ajouter headers IG
+        headers.update(ig_headers)
+        
+        # Ajouter bande passante
+        headers.update({
+            "x-ig-bandwidth-speed-kbps": bandwidth_data["speed_kbps"],
+            "x-ig-bandwidth-totalbytes-b": bandwidth_data["total_bytes"],
+            "x-ig-bandwidth-totaltime-ms": bandwidth_data["total_time_ms"]
+        })
+        
+        # Salt IDs
+        if len(salt_ids) >= 1:
+            headers["x-ig-salt-ids"] = str(salt_ids[0])
+        
+        # Headers Bloks
+        headers.update({
+            "x-bloks-is-layout-rtl": "false",
+            "x-bloks-prism-button-version": "INDIGO_PRIMARY_BORDERED_SECONDARY",
+            "x-bloks-prism-colors-enabled": "false",
+            "x-bloks-prism-elevated-background-fix": "false",
+            "x-bloks-prism-extended-palette-gray-red": "false",
+            "x-bloks-prism-extended-palette-indigo": "false",
+            "x-bloks-prism-font-enabled": "false",
+            "x-bloks-prism-indigo-link-version": "1"
+        })
+        
+        # Bloks version depuis session
+        session_meta = self.session_data.get("session_metadata", {})
+        bloks_version = session_meta.get("bloks_version_id")
+        if bloks_version:
+            headers["x-bloks-version-id"] = bloks_version
+        else:
+            headers["x-bloks-version-id"] = "ef88cb8e7a6a225af847577c11f18eeccda0582b87e294181c4c7425d28047b1"
+        
+        # Device languages depuis session
+        locale = self.session_data.get("locale", "fr_FR")
+        headers["x-ig-device-languages"] = f'{{"system_languages":"{locale}"}}'
+        
+        # Family device ID depuis session
+        uuids = self.session_data.get("uuids", {})
+        family_device_id = uuids.get("client_session_id")
+        if family_device_id:
+            headers["x-ig-family-device-id"] = family_device_id
+        
+        # x-mid depuis session ou device manager
+        x_mid = self.get_x_mid()
+        if x_mid:
+            headers["x-mid"] = x_mid
+        
+        # Nav chain basique si non fournie
+        current_time = int(time.time() * 1000)
+        headers["x-ig-nav-chain"] = f"MainFeedFragment:feed_timeline:1:cold_start:{current_time}:::"
+        
+        # Endpoint spécifique
+        if endpoint:
+            headers["x-ig-client-endpoint"] = endpoint
+        
+        # Friendly name
+        if friendly_name:
+            headers["x-fb-friendly-name"] = friendly_name
+        
+        # Request analytics tags
+        headers["x-fb-request-analytics-tags"] = '{"network_tags":{"product":"567067343352427","purpose":"fetch","surface":"undefined","request_category":"api","retry_attempt":"0"}}'
+        
+        # Zero headers pour économie de données
+        headers.update({
+            "x-zero-a-device-id": "",
+            "x-zero-balance": "INIT",
+            "x-zero-d-device-id": device_headers.get("x-ig-device-id", ""),
+            "x-zero-eh": "",
+            "x-zero-f-device-id": family_device_id or ""
+        })
+        
+        # Meta ZCA depuis session si disponible
+        session_meta = self.session_data.get("session_metadata", {})
+        # Générer meta-zca basique
+        headers["x-meta-zca"] = "eyJhbmRyb2lkIjp7ImFrYSI6eyJkYXRhVG9TaWduIjoie1widGltZVwiOlwiMTc1NzEzMzMxOTAzNFwiLFwiaGFzaFwiOlwiZ3dibUlsdUFoLXFIcFFIMEdEV0x0eEVwZ2NMeXI2RENLemQ4UUdGdzVQQVwifSIsImtleU5vbmNlIjoiQk93WXlWMXhHdW1lNXpEOHBLWGtoQTdDVE1FcXRpZ2wiLCJlcnJvcnMiOlsiS0VZU1RPUkVfVE9LRU5fUkVUUklFVkFMX0VSUk9SIl19LCJncGlhIjp7InRva2VuIjoiIiwiZXJyb3JzIjpbIlBMQVlfSU5URUdSSVRZX0RJU0FCTEVEX0JZX0NPTkZJRyJdfSwicGF5bG9hZCI6eyJwbHVnaW5zIjp7ImJhdCI6eyJzdGEiOiJVbnBsdWdnZWQiLCJsdmwiOjkwfSwic2N0Ijp7fX19fX0"
+        
+        return headers
+    
+    def _build_nav_chain(self, action_type: str = "general") -> str:
+        """Construire nav chain contextuel"""
+        current_time = int(time.time() * 1000)
+        
+        nav_chains = {
+            "like": f"MainFeedFragment:feed_timeline:1:cold_start:{current_time}:::,UserDetailFragment:profile:3:button:{current_time}:::,ProfileMediaTabFragment:profile:4:button:{current_time}:::,ContextualFeedFragment:feed_contextual:5:button:{current_time}:::",
+            "comment": f"MainFeedFragment:feed_timeline:1:cold_start:{current_time}:::,UserDetailFragment:profile:3:button:{current_time}:::,ProfileMediaTabFragment:profile:4:button:{current_time}:::,ContextualFeedFragment:feed_contextual:7:button:{current_time}:::,CommentListBottomsheetFragment:comments_v2:8:button:{current_time}:::",
+            "follow": f"MainFeedFragment:feed_timeline:1:cold_start:{current_time}:::,UserDetailFragment:profile:7:media_owner:{current_time}:::,ProfileMediaTabFragment:profile:8:button:{current_time}:::",
+            "general": f"MainFeedFragment:feed_timeline:1:cold_start:{current_time}:::"
+        }
+        
+        return nav_chains.get(action_type, nav_chains["general"])
+    
     def handle_action_error(self, response_status: int, error_data: dict, response_text: str = "") -> dict:
         """Gérer les erreurs d'action avec messages simplifiés (IDENTIQUE AU SCRIPT ORIGINAL)"""
         try:
@@ -530,14 +828,10 @@ class InstagramClient:
                 "bloks_versioning_id": "e061cacfa956f06869fc2b678270bef1583d2480bf51f508321e64cfb5cc12bd"
             }
             
-            challenge_headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-            }
+            challenge_headers = self._build_complete_headers(
+                endpoint="challenge",
+                friendly_name="Bloks: com.instagram.challenge.navigation.take_challenge"
+            )
             
             payload_str = urllib.parse.urlencode(challenge_payload)
             
@@ -629,7 +923,7 @@ class InstagramClient:
     
     # MÉTHODES INTERNES (appelées par _execute_action_with_retry)
     def _like_post_internal(self, media_input: str) -> dict:
-        """Liker un post Instagram (méthode interne) - AVEC DÉCODAGE UNIFIÉ"""
+        """Liker un post Instagram (méthode interne) - AVEC HEADERS COMPLETS"""
         try:
             # Utiliser l'API pour extraire media ID (SILENCIEUX)
             if self.api:
@@ -650,28 +944,24 @@ class InstagramClient:
                 "delivery_class": "organic", 
                 "tap_source": "button",
                 "media_id": media_id,
-                "radio_type": "wifi-none",
+                "radio_type": self._get_radio_type(),
                 "_uid": user_id,
-                "_uuid": self.auth.device_manager.device_info['device_uuid'],
-                "nav_chain": f"MainFeedFragment:feed_timeline:1:cold_start:{int(time.time() * 1000)}:::{int(time.time() * 1000)}",
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
+                "nav_chain": self._build_nav_chain("like"),
                 "is_from_swipe": "false",
                 "is_carousel_bumped_post": "false", 
                 "floating_context_items": "[]",
-                "container_module": "feed_timeline",
+                "container_module": "feed_contextual_profile",
                 "feed_position": "0"
             }
             
             signed_body = InstagramEncryption.create_signed_body(like_data)
             
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": f"IgApi: media/{media_id}/like/",
-            }
+            # Headers complets avec toutes les données de session
+            headers = self._build_complete_headers(
+                endpoint="feed_contextual_profile",
+                friendly_name=f"IgApi: media/{media_id}/like/"
+            )
             
             response = self.auth.session.post(
                 f"https://i.instagram.com/api/v1/media/{media_id}/like/",
@@ -701,7 +991,7 @@ class InstagramClient:
             return {"success": False, "error": "Ce media a ete supprime"}
     
     def _comment_post_internal(self, media_input: str, comment_text: str) -> dict:
-        """Commenter un post Instagram (méthode interne) - AVEC DÉCODAGE UNIFIÉ"""
+        """Commenter un post Instagram (méthode interne) - AVEC PROCESS COMPLET"""
         try:
             if self.api:
                 media_id = self.api.extract_media_id_from_url(media_input)
@@ -715,80 +1005,103 @@ class InstagramClient:
             if not user_id:
                 return {"success": False, "error": "User ID non trouvé dans la session"}
             
-            # Utiliser directement l'approche web qui fonctionne
-            try:
-                web_response = self.auth.session.get(
-                    media_input,
-                    headers={"user-agent": "Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36"},
-                    timeout=10
-                )
+            # ÉTAPE 1: Check offensive comment (comme dans l'exemple)
+            comment_session_id = str(uuid.uuid4())
+            
+            check_data = {
+                "media_id": media_id,
+                "_uid": user_id,
+                "comment_session_id": comment_session_id,
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
+                "comment_text": comment_text
+            }
+            
+            signed_body_check = InstagramEncryption.create_signed_body(check_data)
+            
+            headers_check = self._build_complete_headers(
+                endpoint="comments_v2_feed_contextual_profile",
+                friendly_name="IgApi: media/comment/check_offensive_comment/"
+            )
+            
+            check_response = self.auth.session.post(
+                "https://i-fallback.instagram.com/api/v1/media/comment/check_offensive_comment/",
+                headers=headers_check,
+                data={"signed_body": signed_body_check},
+                timeout=10
+            )
+            
+            # Continuer même si check échoue
+            
+            # ÉTAPE 2: Post comment avec tous les paramètres
+            current_time = int(time.time())
+            
+            # User breadcrumb calculé
+            breadcrumb_time = current_time * 1000 + 495
+            user_breadcrumb = f"2CtNlMTofPYazH1tAZYSrseuaWwzOznZW4XAcSF9W74=\\nMTAgNTY4OCAwIDE3NTcxMzM2NzY0OTU=\\n"
+            
+            comment_data = {
+                "include_media_code": "true",
+                "user_breadcrumb": user_breadcrumb,
+                "starting_clips_media_id": "null",
+                "comment_creation_key": str(uuid.uuid4()),
+                "delivery_class": "organic",
+                "idempotence_token": str(uuid.uuid4()),
+                "client_position": "0",
+                "carousel_child_mentions": "[]",
+                "include_e2ee_mentioned_user_list": "true",
+                "include_carousel_child_mentions": "false",
+                "is_from_carousel_child_thread": "false",
+                "carousel_index": "-1",
+                "radio_type": self._get_radio_type(),
+                "_uid": user_id,
+                "is_text_app_xpost_attempt": "false",
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
+                "nav_chain": self._build_nav_chain("comment"),
+                "comment_text": comment_text,
+                "recs_ix": "-1",
+                "is_carousel_bumped_post": "false",
+                "floating_context_items": "[]",
+                "container_module": "comments_v2_feed_contextual_profile",
+                "feed_position": "0",
+                "ranking_session_id": str(uuid.uuid4())
+            }
+            
+            signed_body = InstagramEncryption.create_signed_body(comment_data)
+            
+            headers = self._build_complete_headers(
+                endpoint="comments_v2_feed_contextual_profile",
+                friendly_name=f"IgApi: media/{media_id}/comment/"
+            )
+            
+            response = self.auth.session.post(
+                f"https://i-fallback.instagram.com/api/v1/media/{media_id}/comment/",
+                headers=headers,
+                data={"signed_body": signed_body},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                parsed_data = InstagramEncryption.safe_parse_json(response)
                 
-                if web_response.status_code == 200:
-                    web_content = InstagramEncryption.safe_decode_response(web_response)
-                    
-                    # Extraire le csrf_token
-                    csrf_match = re.search(r'"csrf_token":"([^"]+)"', web_content)
-                    if csrf_match:
-                        csrf_token = csrf_match.group(1)
-                        
-                        web_comment_data = {
-                            "comment_text": comment_text,
-                            "replied_to_comment_id": "",
-                            "media_id": media_id
-                        }
-                        
-                        web_headers = {
-                            "accept": "*/*",
-                            "accept-language": "fr-FR,fr;q=0.9,en;q=0.8",
-                            "content-type": "application/x-www-form-urlencoded",
-                            "user-agent": "Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-                            "x-csrftoken": csrf_token,
-                            "x-ig-app-id": "567067343352427",
-                            "x-ig-www-claim": "0",
-                            "x-requested-with": "XMLHttpRequest"
-                        }
-                        
-                        cookies = self.session_data.get("cookies", {})
-                        cookies["csrftoken"] = csrf_token
-                        
-                        for name, value in cookies.items():
-                            self.auth.session.cookies.set(name, value)
-                        
-                        response = self.auth.session.post(
-                            f"https://www.instagram.com/api/v1/web/comments/{media_id}/add/",
-                            headers=web_headers,
-                            data=web_comment_data,
-                            timeout=10
-                        )
-                        
-                        if response.status_code == 200:
-                            parsed_data = InstagramEncryption.safe_parse_json(response)
-                            
-                            if InstagramEncryption.is_success_response(response, parsed_data):
-                                return {"success": True, "data": parsed_data}
-                            else:
-                                return self.handle_action_error(response.status_code, parsed_data, 
-                                                             InstagramEncryption.safe_decode_response(response))
-                        else:
-                            if response.status_code == 400:
-                                parsed_data = InstagramEncryption.safe_parse_json(response)
-                                return self.handle_action_error(response.status_code, parsed_data, 
-                                                             InstagramEncryption.safe_decode_response(response))
-                            
-                            return self.handle_http_error(response.status_code, 
-                                                        InstagramEncryption.safe_decode_response(response))
-                    else:
-                        return {"success": False, "error": "Ce média a été supprimé"}
+                if InstagramEncryption.is_success_response(response, parsed_data):
+                    return {"success": True, "data": parsed_data}
                 else:
-                    return {"success": False, "error": "Ce media a ete supprime"}
-            except Exception as web_error:
-                return self.handle_media_error("Ce média a été supprimé")
+                    return self.handle_action_error(response.status_code, parsed_data, 
+                                                 InstagramEncryption.safe_decode_response(response))
+            else:
+                if response.status_code == 400:
+                    parsed_data = InstagramEncryption.safe_parse_json(response)
+                    return self.handle_action_error(response.status_code, parsed_data, 
+                                                 InstagramEncryption.safe_decode_response(response))
+                
+                return self.handle_http_error(response.status_code, 
+                                            InstagramEncryption.safe_decode_response(response))
                 
         except Exception as e:
-            return self.handle_media_error("Ce media a ete supprime")
+            return {"success": False, "error": "Ce media a ete supprime"}
     
     def _follow_user_internal(self, user_input: str) -> dict:
-        """Suivre un utilisateur (méthode interne) - CORRIGÉE avec recherche similaire exacte"""
+        """Suivre un utilisateur (méthode interne) - AVEC HEADERS COMPLETS"""
         try:
             if self.api:
                 user_id = self.api.extract_user_id_from_url(user_input)
@@ -812,31 +1125,25 @@ class InstagramClient:
             if not current_user_id:
                 return {"success": False, "error": "User ID non trouvé dans la session"}
             
-            # DONNÉES SIMPLES COMME SCRIPT ORIGINAL (qui marchaient)
+            # DONNÉES EXACTEMENT comme l'exemple
             follow_data = {
-                "inventory_source": "media_or_ad",
                 "include_follow_friction_check": "1",
                 "user_id": user_id,
-                "radio_type": "wifi-none",
+                "radio_type": self._get_radio_type(),
                 "_uid": current_user_id,
-                "device_id": self.auth.device_manager.device_info['android_id'],
-                "_uuid": self.auth.device_manager.device_info['device_uuid'],
-                "nav_chain": f"MainFeedFragment:feed_timeline:1:cold_start:{int(time.time() * 1000)}:::{int(time.time() * 1000)},UserDetailFragment:profile:7:media_owner:{int(time.time() * 1000)}:::{int(time.time() * 1000)},ProfileMediaTabFragment:profile:8:button:{int(time.time() * 1000)}:::{int(time.time() * 1000)}",
+                "device_id": self._get_device_specific_headers()["x-ig-android-id"],
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
+                "nav_chain": self._build_nav_chain("follow"),
                 "container_module": "profile"
             }
             
             signed_body = InstagramEncryption.create_signed_body(follow_data)
             
-            # HEADERS SIMPLES COMME SCRIPT ORIGINAL (qui marchaient)
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": current_user_id,
-                "ig-u-ds-user-id": current_user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": f"IgApi: friendships/create/{user_id}/",
-            }
+            # Headers complets avec toutes les données de session
+            headers = self._build_complete_headers(
+                endpoint="profile",
+                friendly_name=f"IgApi: friendships/create/{user_id}/"
+            )
             
             response = self.auth.session.post(
                 f"https://i.instagram.com/api/v1/friendships/create/{user_id}/",
@@ -872,17 +1179,13 @@ class InstagramClient:
             if not self.api:
                 return None
             
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-            }
+            headers = self._build_complete_headers(
+                endpoint="user_search",
+                friendly_name="IgApi: users/search/"
+            )
             
             search_params = {
-                "timezone_offset": "10800",
+                "timezone_offset": str(self.session_data.get("timezone_offset", 10800)),
                 "q": target_username,
                 "count": "20"
             }
@@ -1115,20 +1418,15 @@ class InstagramClient:
             
             privacy_data = {
                 "_uid": user_id,
-                "_uuid": self.auth.device_manager.device_info['device_uuid']
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"]
             }
             
             signed_body = InstagramEncryption.create_signed_body(privacy_data)
             
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": f"IgApi: accounts/{action}/",
-            }
+            headers = self._build_complete_headers(
+                endpoint="account_privacy",
+                friendly_name=f"IgApi: accounts/{action}/"
+            )
             
             response = self.auth.session.post(
                 f"https://i.instagram.com/api/v1/accounts/{action}/",
@@ -1160,24 +1458,22 @@ class InstagramClient:
     
     # MÉTHODES D'UPLOAD ET CONFIGURATION
     def _upload_image_data(self, image_data: bytes, upload_id: str, story_mode: bool = False) -> dict:
-        """Upload des données d'image vers Instagram"""
+        """Upload des données d'image vers Instagram avec headers complets"""
         try:
             user_id = self._get_user_id_from_session()
             
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/octet-stream",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "offset": "0",
-                "priority": "u=6, i",
-                "x-entity-length": str(len(image_data)),
-                "x-entity-name": f"{upload_id}_0_{random.randint(1000000000, 9999999999)}",
-                "x-entity-type": "image/jpeg",
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "accept-encoding": "gzip, deflate",
-            }
+            # Headers complets pour upload
+            headers = self._build_complete_headers(
+                endpoint="upload",
+                friendly_name="IgApi: rupload_igphoto"
+            )
+            
+            # Modifier content-type pour upload
+            headers["content-type"] = "application/octet-stream"
+            headers["offset"] = "0"
+            headers["x-entity-length"] = str(len(image_data))
+            headers["x-entity-name"] = f"{upload_id}_0_{random.randint(1000000000, 9999999999)}"
+            headers["x-entity-type"] = "image/jpeg"
             
             share_type = "stories" if story_mode else "feed"
             
@@ -1217,9 +1513,13 @@ class InstagramClient:
             return {"success": False, "error": f"Erreur upload image: {str(e)}"}
     
     def _configure_story(self, upload_id: str, image_size: tuple, user_id: str) -> dict:
-        """Configurer la story après upload"""
+        """Configurer la story après upload avec headers complets"""
         try:
             width, height = image_size
+            
+            # Récupérer device settings depuis session
+            device_settings = self.session_data.get("device_settings", {})
+            uuids = self.session_data.get("uuids", {})
             
             story_data = {
                 "supported_capabilities_new": '[{"name":"SUPPORTED_SDK_VERSIONS","value":"149.0,150.0,151.0,152.0,153.0,154.0,155.0,156.0,157.0,158.0,159.0,160.0,161.0,162.0,163.0,164.0,165.0,166.0,167.0,168.0,169.0,170.0,171.0,172.0,173.0,174.0,175.0,176.0,177.0,178.0,179.0,180.0,181.0,182.0,183.0,184.0,185.0,186.0,187.0,188.0,189.0,190.0,191.0,192.0,193.0,194.0,195.0,196.0,197.0,198.0,199.0,200.0,201.0,202.0"},{"name":"SUPPORTED_BETA_SDK_VERSIONS","value":"182.0-beta,183.0-beta,184.0-beta,185.0-beta,186.0-beta,187.0-beta,188.0-beta,189.0-beta,190.0-beta,191.0-beta,192.0-beta,193.0-beta,194.0-beta,195.0-beta,196.0-beta,197.0-beta,198.0-beta,199.0-beta,200.0-beta,201.0-beta,202.0-beta"},{"name":"FACE_TRACKER_VERSION","value":"14"},{"name":"segmentation","value":"segmentation_enabled"},{"name":"COMPRESSION","value":"ETC2_COMPRESSION"},{"name":"gyroscope","value":"gyroscope_enabled"}]',
@@ -1232,16 +1532,16 @@ class InstagramClient:
                 "include_e2ee_mentioned_user_list": "1",
                 "hide_from_profile_grid": "false",
                 "scene_capture_type": "",
-                "timezone_offset": "10800",
+                "timezone_offset": str(self.session_data.get("timezone_offset", 10800)),
                 "client_shared_at": str(int(time.time())),
                 "media_folder": "Screenshots",
                 "configure_mode": "1",
                 "source_type": "4",
                 "camera_position": "unknown",
                 "_uid": user_id,
-                "device_id": self.auth.device_manager.device_info['android_id'],
+                "device_id": self._get_device_specific_headers()["x-ig-android-id"],
                 "composition_id": str(uuid.uuid4()),
-                "_uuid": self.auth.device_manager.device_info['device_uuid'],
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
                 "creation_tool_info": "[]",
                 "creation_surface": "camera",
                 "nav_chain": f"MainFeedFragment:feed_timeline:1:cold_start:{int(time.time() * 1000)}:::,QuickCaptureFragment:stories_precapture_camera:25:your_story_placeholder:{int(time.time() * 1000)}:::,PrivateStoryShareSheetFragment:private_stories_share_sheet:28:button:{int(time.time() * 1000)}::",
@@ -1264,24 +1564,19 @@ class InstagramClient:
                     "source_height": height
                 },
                 "device": {
-                    "manufacturer": self.auth.device_manager.device_info.get('manufacturer', 'samsung'),
-                    "model": self.auth.device_manager.device_info.get('model', 'SM-S9210'),
-                    "android_version": int(self.auth.device_manager.device_info.get('sdk_version', 28)),
-                    "android_release": self.auth.device_manager.device_info.get('android_version', '9')
+                    "manufacturer": device_settings.get('manufacturer', 'samsung'),
+                    "model": device_settings.get('model', 'SM-G991B'),
+                    "android_version": device_settings.get('android_version', 32),
+                    "android_release": device_settings.get('android_release', '12')
                 }
             }
             
             signed_body = InstagramEncryption.create_signed_body(story_data)
             
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": "IgApi: media/configure_to_story/",
-            }
+            headers = self._build_complete_headers(
+                endpoint="story_configure",
+                friendly_name="IgApi: media/configure_to_story/"
+            )
             
             response = self.auth.session.post(
                 "https://i.instagram.com/api/v1/media/configure_to_story/",
@@ -1311,9 +1606,12 @@ class InstagramClient:
             return {"success": False, "error": f"Erreur configuration story: {str(e)}"}
     
     def _configure_post(self, upload_id: str, image_size: tuple, user_id: str, caption: str = "") -> dict:
-        """Configurer le post après upload"""
+        """Configurer le post après upload avec headers complets"""
         try:
             width, height = image_size
+            
+            # Récupérer device settings depuis session
+            device_settings = self.session_data.get("device_settings", {})
             
             post_data = {
                 "app_attribution_android_namespace": "",
@@ -1323,11 +1621,11 @@ class InstagramClient:
                 "include_e2ee_mentioned_user_list": "1",
                 "hide_from_profile_grid": "false",
                 "scene_capture_type": "",
-                "timezone_offset": "10800",
+                "timezone_offset": str(self.session_data.get("timezone_offset", 10800)),
                 "source_type": "4",
                 "_uid": user_id,
-                "device_id": self.auth.device_manager.device_info['android_id'],
-                "_uuid": self.auth.device_manager.device_info['device_uuid'],
+                "device_id": self._get_device_specific_headers()["x-ig-android-id"],
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
                 "creation_tool_info": "[]",
                 "creation_logger_session_id": str(uuid.uuid4()),
                 "nav_chain": f"MainFeedFragment:feed_timeline:1:cold_start:{int(time.time() * 1000)}:::,GalleryPickerFragment:gallery_picker:50:camera_tab_bar:{int(time.time() * 1000)}:::,PhotoFilterFragment:photo_filter:51:button:{int(time.time() * 1000)}::",
@@ -1349,25 +1647,20 @@ class InstagramClient:
                     "source_height": height
                 },
                 "device": {
-                    "manufacturer": self.auth.device_manager.device_info.get('manufacturer', 'samsung'),
-                    "model": self.auth.device_manager.device_info.get('model', 'SM-S9210'),
-                    "android_version": int(self.auth.device_manager.device_info.get('sdk_version', 28)),
-                    "android_release": self.auth.device_manager.device_info.get('android_version', '9')
+                    "manufacturer": device_settings.get('manufacturer', 'samsung'),
+                    "model": device_settings.get('model', 'SM-G991B'),
+                    "android_version": device_settings.get('android_version', 32),
+                    "android_release": device_settings.get('android_release', '12')
                 },
                 "overlay_data": []
             }
             
             signed_body = InstagramEncryption.create_signed_body(post_data)
             
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": "IgApi: media/configure/",
-            }
+            headers = self._build_complete_headers(
+                endpoint="post_configure",
+                friendly_name="IgApi: media/configure/"
+            )
             
             response = self.auth.session.post(
                 "https://i.instagram.com/api/v1/media/configure/",
@@ -1404,21 +1697,16 @@ class InstagramClient:
             pdq_data = {
                 "pdq_hash_info": f'[{{"pdq_hash":"{pdq_hash}","frame_time":0}}]',
                 "_uid": user_id,
-                "_uuid": self.auth.device_manager.device_info['device_uuid'],
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
                 "upload_id": upload_id
             }
             
             signed_body = InstagramEncryption.create_signed_body(pdq_data)
             
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": "IgApi: media/update_media_with_pdq_hash_info/",
-            }
+            headers = self._build_complete_headers(
+                endpoint="pdq_update",
+                friendly_name="IgApi: media/update_media_with_pdq_hash_info/"
+            )
             
             response = self.auth.session.post(
                 "https://i.instagram.com/api/v1/media/update_media_with_pdq_hash_info/",
@@ -1438,7 +1726,7 @@ class InstagramClient:
             return {"success": False, "error": f"PDQ hash error: {str(e)}"}
     
     def _delete_media(self, media_id: str) -> dict:
-        """Supprimer un média par son ID - AVEC DÉCODAGE UNIFIÉ"""
+        """Supprimer un média par son ID - AVEC HEADERS COMPLETS"""
         try:
             user_id = self._get_user_id_from_session()
             
@@ -1446,20 +1734,15 @@ class InstagramClient:
                 "igtv_feed_preview": "false",
                 "media_id": media_id,
                 "_uid": user_id,
-                "_uuid": self.auth.device_manager.device_info['device_uuid']
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"]
             }
             
             signed_body = InstagramEncryption.create_signed_body(delete_data)
             
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": f"IgApi: media/{media_id}/delete/?media_type=PHOTO",
-            }
+            headers = self._build_complete_headers(
+                endpoint="media_delete",
+                friendly_name=f"IgApi: media/{media_id}/delete/?media_type=PHOTO"
+            )
             
             response = self.auth.session.post(
                 f"https://i.instagram.com/api/v1/media/{media_id}/delete/?media_type=PHOTO",
@@ -1503,13 +1786,10 @@ class InstagramClient:
             if not media_id:
                 return {"success": False, "error": "Media ID non trouvé"}
             
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
+            headers = self._build_complete_headers(
+                endpoint="media_info",
+                friendly_name=f"IgApi: media/{media_id}/info/"
+            )
             
             response = self.auth.session.get(
                 f"https://i.instagram.com/api/v1/media/{media_id}/info/",
@@ -1557,13 +1837,10 @@ class InstagramClient:
             if not user_id:
                 return {"success": False, "error": "User ID non trouvé"}
             
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
+            headers = self._build_complete_headers(
+                endpoint="user_feed",
+                friendly_name=f"IgApi: feed/user/{user_id}/"
+            )
             
             params = {
                 "count": str(count),
@@ -1674,24 +1951,19 @@ class InstagramClient:
             
             unlike_data = {
                 "media_id": media_id,
-                "radio_type": "wifi-none",
+                "radio_type": self._get_radio_type(),
                 "_uid": user_id,
-                "_uuid": self.auth.device_manager.device_info['device_uuid'],
-                "nav_chain": f"MainFeedFragment:feed_timeline:1:cold_start:{int(time.time() * 1000)}:::{int(time.time() * 1000)}",
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
+                "nav_chain": self._build_nav_chain("like"),
                 "container_module": "feed_timeline"
             }
             
             signed_body = InstagramEncryption.create_signed_body(unlike_data)
             
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": f"IgApi: media/{media_id}/unlike/",
-            }
+            headers = self._build_complete_headers(
+                endpoint="unlike",
+                friendly_name=f"IgApi: media/{media_id}/unlike/"
+            )
             
             response = self.auth.session.post(
                 f"https://i.instagram.com/api/v1/media/{media_id}/unlike/",
@@ -1733,7 +2005,7 @@ class InstagramClient:
                 username_match = re.search(r'instagram\.com/([^/?]+)', user_input)
                 if username_match:
                     target_username = username_match.group(1).replace('@', '').strip()
-                    user_id = self.api.username_to_user_id(target_username)
+                    user_id = self._search_similar_username(target_username)
                 
                 if not user_id:
                     return {"success": False, "error": "Utilisateur introuvable"}
@@ -1744,25 +2016,20 @@ class InstagramClient:
             
             unfollow_data = {
                 "user_id": user_id,
-                "radio_type": "wifi-none",
+                "radio_type": self._get_radio_type(),
                 "_uid": current_user_id,
-                "device_id": self.auth.device_manager.device_info['android_id'],
-                "_uuid": self.auth.device_manager.device_info['device_uuid'],
+                "device_id": self._get_device_specific_headers()["x-ig-android-id"],
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
                 "nav_chain": f"UserDetailFragment:profile:1:button:{int(time.time() * 1000)}:::{int(time.time() * 1000)}",
                 "container_module": "profile"
             }
             
             signed_body = InstagramEncryption.create_signed_body(unfollow_data)
             
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": current_user_id,
-                "ig-u-ds-user-id": current_user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": f"IgApi: friendships/destroy/{user_id}/",
-            }
+            headers = self._build_complete_headers(
+                endpoint="unfollow",
+                friendly_name=f"IgApi: friendships/destroy/{user_id}/"
+            )
             
             response = self.auth.session.post(
                 f"https://i.instagram.com/api/v1/friendships/destroy/{user_id}/",
@@ -1791,6 +2058,7 @@ class InstagramClient:
         except Exception as e:
             return {"success": False, "error": "Utilisateur introuvable"}
     
+    # Méthodes supplémentaires pour la compatibilité complète...
     def delete_comment(self, media_input: str, comment_id: str) -> dict:
         """Supprimer un commentaire"""
         try:
@@ -1808,21 +2076,16 @@ class InstagramClient:
             
             delete_comment_data = {
                 "_uid": user_id,
-                "_uuid": self.auth.device_manager.device_info['device_uuid'],
-                "nav_chain": f"MainFeedFragment:feed_timeline:1:cold_start:{int(time.time() * 1000)}:::{int(time.time() * 1000)}"
+                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
+                "nav_chain": self._build_nav_chain("comment")
             }
             
             signed_body = InstagramEncryption.create_signed_body(delete_comment_data)
             
-            headers = {
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "ig-intended-user-id": user_id,
-                "ig-u-ds-user-id": user_id,
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-fb-friendly-name": f"IgApi: media/{media_id}/comment/{comment_id}/delete/",
-            }
+            headers = self._build_complete_headers(
+                endpoint="comment_delete",
+                friendly_name=f"IgApi: media/{media_id}/comment/{comment_id}/delete/"
+            )
             
             response = self.auth.session.post(
                 f"https://i.instagram.com/api/v1/media/{media_id}/comment/{comment_id}/delete/",
@@ -1851,6 +2114,7 @@ class InstagramClient:
         except Exception as e:
             return {"success": False, "error": f"Erreur: {str(e)}"}
     
+    # Méthodes pour récupérer les followers, following, etc. avec headers complets
     def get_followers(self, user_input: str = None, count: int = 20) -> dict:
         """Récupérer la liste des abonnés"""
         try:
@@ -1865,13 +2129,10 @@ class InstagramClient:
             if not user_id:
                 return {"success": False, "error": "User ID non trouvé"}
             
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
+            headers = self._build_complete_headers(
+                endpoint="followers",
+                friendly_name=f"IgApi: friendships/{user_id}/followers/"
+            )
             
             params = {
                 "count": str(count),
@@ -1928,13 +2189,10 @@ class InstagramClient:
             if not user_id:
                 return {"success": False, "error": "User ID non trouvé"}
             
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
+            headers = self._build_complete_headers(
+                endpoint="following",
+                friendly_name=f"IgApi: friendships/{user_id}/following/"
+            )
             
             params = {
                 "count": str(count),
@@ -1980,17 +2238,13 @@ class InstagramClient:
     def search_users(self, query: str, count: int = 20) -> dict:
         """Rechercher des utilisateurs"""
         try:
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-                "accept-language": "fr-FR, en-US",
-                "authorization": self._get_auth_token(),
-            }
+            headers = self._build_complete_headers(
+                endpoint="user_search",
+                friendly_name="IgApi: users/search/"
+            )
             
             search_params = {
-                "timezone_offset": "10800",
+                "timezone_offset": str(self.session_data.get("timezone_offset", 10800)),
                 "q": query,
                 "count": str(count)
             }
@@ -2043,13 +2297,10 @@ class InstagramClient:
             if not media_id:
                 return {"success": False, "error": "Ce média a été supprimé"}
             
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
+            headers = self._build_complete_headers(
+                endpoint="comments",
+                friendly_name=f"IgApi: media/{media_id}/comments/"
+            )
             
             params = {
                 "count": str(count),
@@ -2106,13 +2357,10 @@ class InstagramClient:
             if not media_id:
                 return {"success": False, "error": "Ce média a été supprimé"}
             
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
+            headers = self._build_complete_headers(
+                endpoint="likers",
+                friendly_name=f"IgApi: media/{media_id}/likers/"
+            )
             
             response = self.auth.session.get(
                 f"https://i.instagram.com/api/v1/media/{media_id}/likers/",
@@ -2154,13 +2402,10 @@ class InstagramClient:
         try:
             user_id = self._get_user_id_from_session()
             
-            headers = {
-                "user-agent": self.auth.device_manager.device_info['user_agent'],
-                "x-ig-app-id": "567067343352427",
-                "authorization": self._get_auth_token(),
-                "x-ig-android-id": self.auth.device_manager.device_info['android_id'],
-                "x-ig-device-id": self.auth.device_manager.device_info['device_uuid'],
-            }
+            headers = self._build_complete_headers(
+                endpoint="timeline",
+                friendly_name="IgApi: feed/timeline/"
+            )
             
             params = {
                 "count": str(count),
