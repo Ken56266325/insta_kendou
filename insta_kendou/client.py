@@ -1124,7 +1124,7 @@ class InstagramClient:
             return {"success": False, "error": "Ce media a ete supprime"}
     
     def _comment_post_internal(self, media_input: str, comment_text: str) -> dict:
-        """Commenter un post Instagram (méthode interne) - AVEC PROCESS COMPLET CORRIGÉ"""
+        """Commenter un post Instagram (méthode interne) - VERSION ORIGINALE SIMPLIFIÉE"""
         try:
             if self.api:
                 media_id = self.api.extract_media_id_from_url(media_input)
@@ -1138,136 +1138,77 @@ class InstagramClient:
             if not user_id:
                 return {"success": False, "error": "User ID non trouvé dans la session"}
             
-            # ÉTAPE 1: Check offensive comment (OBLIGATOIRE)
-            comment_session_id = str(uuid.uuid4())
-            
-            check_data = {
-                "media_id": media_id,
-                "_uid": user_id,
-                "comment_session_id": comment_session_id,
-                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
-                "comment_text": comment_text
-            }
-            
-            signed_body_check = InstagramEncryption.create_signed_body(check_data)
-            
-            headers_check = self._build_complete_headers(
-                endpoint="comments_v2_feed_contextual_profile",
-                friendly_name="IgApi: media/comment/check_offensive_comment/"
-            )
-            
-            # VÉRIFICATION OBLIGATOIRE
-            check_response = self.auth.session.post(
-                "https://i-fallback.instagram.com/api/v1/media/comment/check_offensive_comment/",
-                headers=headers_check,
-                data={"signed_body": signed_body_check},
-                timeout=10
-            )
-            
-            # ARRÊTER SI CHECK ÉCHOUE
-            if check_response.status_code != 200:
-                return {"success": False, "error": "Échec vérification commentaire"}
-            
+            # Utiliser directement l'approche web qui fonctionne
             try:
-                check_result = check_response.json()
-                if check_result.get("is_offensive", False):
-                    return {"success": False, "error": "Commentaire détecté comme offensant"}
-                if check_result.get("status") != "ok":
-                    return {"success": False, "error": "Vérification commentaire échouée"}
-            except:
-                return {"success": False, "error": "Réponse check invalide"}
-            
-            # ÉTAPE 2: Post comment avec données exactes
-            current_time = int(time.time())
-            comment_creation_key = str(uuid.uuid4())
-            
-            # Calculer user_breadcrumb réel (timing utilisateur)
-            breadcrumb_time = current_time * 1000 + 495
-            user_breadcrumb = self._generate_user_breadcrumb(comment_text, breadcrumb_time)
-            
-            comment_data = {
-                "include_media_code": "true",
-                "user_breadcrumb": user_breadcrumb,
-                "starting_clips_media_id": "null",
-                "comment_creation_key": comment_creation_key,
-                "delivery_class": "organic",
-                "idempotence_token": comment_creation_key,  # Même que creation_key
-                "client_position": "0",
-                "carousel_child_mentions": "[]",
-                "include_e2ee_mentioned_user_list": "true",
-                "include_carousel_child_mentions": "false",
-                "is_from_carousel_child_thread": "false",
-                "carousel_index": "-1",
-                "radio_type": self._get_radio_type(),
-                "_uid": user_id,
-                "is_text_app_xpost_attempt": "false",
-                "_uuid": self._get_device_specific_headers()["x-ig-device-id"],
-                "nav_chain": self._build_nav_chain("comment"),
-                "comment_text": comment_text,
-                "recs_ix": "-1",
-                "is_carousel_bumped_post": "false",
-                "floating_context_items": "[]",
-                "container_module": "comments_v2_feed_contextual_profile",
-                "feed_position": "0",
-                "ranking_session_id": str(uuid.uuid4())
-            }
-            
-            signed_body = InstagramEncryption.create_signed_body(comment_data)
-            
-            headers = self._build_complete_headers(
-                endpoint="comments_v2_feed_contextual_profile",
-                friendly_name=f"IgApi: media/{media_id}/comment/"
-            )
-            
-            # UTILISER i-fallback.instagram.com comme dans l'exemple
-            response = self.auth.session.post(
-                f"https://i-fallback.instagram.com/api/v1/media/{media_id}/comment/",
-                headers=headers,
-                data={"signed_body": signed_body},
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                parsed_data = InstagramEncryption.safe_parse_json(response)
+                web_response = self.auth.session.get(
+                    media_input,
+                    headers={"user-agent": "Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36"},
+                    timeout=10
+                )
                 
-                if InstagramEncryption.is_success_response(response, parsed_data):
-                    return {"success": True, "data": parsed_data}
+                if web_response.status_code == 200:
+                    web_content = InstagramEncryption.safe_decode_response(web_response)
+                    
+                    # Extraire le csrf_token
+                    csrf_match = re.search(r'"csrf_token":"([^"]+)"', web_content)
+                    if csrf_match:
+                        csrf_token = csrf_match.group(1)
+                        
+                        web_comment_data = {
+                            "comment_text": comment_text,
+                            "replied_to_comment_id": "",
+                            "media_id": media_id
+                        }
+                        
+                        web_headers = {
+                            "accept": "*/*",
+                            "accept-language": "fr-FR,fr;q=0.9,en;q=0.8",
+                            "content-type": "application/x-www-form-urlencoded",
+                            "user-agent": "Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+                            "x-csrftoken": csrf_token,
+                            "x-ig-app-id": "567067343352427",
+                            "x-ig-www-claim": "0",
+                            "x-requested-with": "XMLHttpRequest"
+                        }
+                        
+                        cookies = self.session_data.get("cookies", {})
+                        cookies["csrftoken"] = csrf_token
+                        
+                        for name, value in cookies.items():
+                            self.auth.session.cookies.set(name, value)
+                        
+                        response = self.auth.session.post(
+                            f"https://www.instagram.com/api/v1/web/comments/{media_id}/add/",
+                            headers=web_headers,
+                            data=web_comment_data,
+                            timeout=10
+                        )
+                        
+                        if response.status_code == 200:
+                            parsed_data = InstagramEncryption.safe_parse_json(response)
+                            
+                            if InstagramEncryption.is_success_response(response, parsed_data):
+                                return {"success": True, "data": parsed_data}
+                            else:
+                                return self.handle_action_error(response.status_code, parsed_data, 
+                                                             InstagramEncryption.safe_decode_response(response))
+                        else:
+                            if response.status_code == 400:
+                                parsed_data = InstagramEncryption.safe_parse_json(response)
+                                return self.handle_action_error(response.status_code, parsed_data, 
+                                                             InstagramEncryption.safe_decode_response(response))
+                            
+                            return self.handle_http_error(response.status_code, 
+                                                        InstagramEncryption.safe_decode_response(response))
+                    else:
+                        return {"success": False, "error": "Ce média a été supprimé"}
                 else:
-                    return self.handle_action_error(response.status_code, parsed_data, 
-                                                 InstagramEncryption.safe_decode_response(response))
-            else:
-                if response.status_code == 400:
-                    parsed_data = InstagramEncryption.safe_parse_json(response)
-                    return self.handle_action_error(response.status_code, parsed_data, 
-                                                 InstagramEncryption.safe_decode_response(response))
-                
-                return self.handle_http_error(response.status_code, 
-                                            InstagramEncryption.safe_decode_response(response))
+                    return {"success": False, "error": "Ce media a ete supprime"}
+            except Exception as web_error:
+                return self.handle_media_error("Ce média a été supprimé")
                 
         except Exception as e:
-            return {"success": False, "error": f"Erreur commentaire: {str(e)}"}
-    
-    def _generate_user_breadcrumb(self, comment_text: str, timestamp: int) -> str:
-        """Générer user_breadcrumb réaliste pour commentaire"""
-        import base64
-        
-        try:
-            # Simuler timing de frappe (longueur texte * délai moyen)
-            text_length = len(comment_text)
-            typing_time = text_length * random.randint(80, 150)  # ms par caractère
-            
-            # Données de breadcrumb (simulation timing réel)
-            breadcrumb_data = f"2CtNlMTofPYazH1tAZYSrseuaWwzOznZW4XAcSF9W74=\\nMTAgNTY4OCAwIDE3NTcxMzM2NzY0OTU=\\n"
-            
-            # Alternative : générer dynamiquement
-            base_data = base64.b64encode(f"timing_{timestamp}_{typing_time}".encode()).decode()
-            timing_data = base64.b64encode(f"10 5688 0 {timestamp}".encode()).decode()
-            
-            return f"{base_data}\\n{timing_data}\\n"
-            
-        except:
-            # Fallback avec timestamp actuel
-            return f"2CtNlMTofPYazH1tAZYSrseuaWwzOznZW4XAcSF9W74=\\nMTAgNTY4OCAwIDE3NTcxMzM2NzY0OTU=\\n"
+            return self.handle_media_error("Ce media a ete supprime")
     
     def _follow_user_internal(self, user_input: str) -> dict:
         """Suivre un utilisateur (méthode interne) - AVEC HEADERS COMPLETS"""
